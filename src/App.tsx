@@ -50,6 +50,24 @@ export default function App() {
     setActiveTab('prompt');
   };
 
+  const handleRedactPII = () => {
+    let redactedText = intent.raw;
+    // Sort findings by index descending to avoid offset issues when replacing
+    const sortedFindings = [...piiFindings].sort((a, b) => b.index - a.index);
+    
+    sortedFindings.forEach(finding => {
+      redactedText = redactedText.substring(0, finding.index) + 
+                     `[REDACTED ${finding.type}]` + 
+                     redactedText.substring(finding.index + finding.value.length);
+    });
+
+    setIntent(prev => ({ ...prev, raw: redactedText }));
+    setPiiFindings([]);
+    if (error && error.includes('Potential PII detected')) {
+      setError(null);
+    }
+  };
+
   const handleGenerate = async () => {
     if (!intent.raw) return;
     
@@ -340,6 +358,27 @@ export default function App() {
                   placeholder="Describe what you want the AI to do..."
                   className="w-full h-32 bg-[#050505] border border-[#1a1a1a] p-3 text-xs focus:border-[#00ff00] outline-none transition-colors resize-none"
                 />
+                <AnimatePresence>
+                  {piiFindings.length > 0 && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="mt-2 p-2 bg-[#1a0505] border border-[#ff0000] flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2 text-[#ff0000]">
+                        <ShieldAlert size={12} />
+                        <span className="text-[10px] font-bold">PII DETECTED ({piiFindings.length})</span>
+                      </div>
+                      <button
+                        onClick={handleRedactPII}
+                        className="text-[9px] bg-[#ff0000] text-white px-2 py-1 hover:bg-[#cc0000] transition-colors uppercase font-bold"
+                      >
+                        Redact All
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
