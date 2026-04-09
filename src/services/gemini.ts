@@ -24,28 +24,25 @@ export function scanForPII(text: string): PIIFinding[] {
 // Essential: Model-Specific Reasoning Adapters
 const getModelStrengths = (model: ModelType) => {
   switch (model) {
-    case ModelType.GEMINI_2_0_PRO:
-      return "Focus on extreme reasoning, long-context (2M+), and complex multi-modal synthesis.";
-    case ModelType.GEMINI_2_0_FLASH:
-      return "Optimize for low-latency, high-throughput, and tool-use efficiency.";
-    case ModelType.CLAUDE_3_7_SONNET:
-      return "Prioritize hybrid reasoning (thinking) and high-fidelity code generation.";
-    case ModelType.CLAUDE_3_5_SONNET:
-      return "Prioritize nuanced coding logic and creative synthesis.";
-    case ModelType.GPT_4O:
-      return "Leverage strong instruction following and balanced reasoning.";
-    case ModelType.DEEPSEEK_V3:
-      return "Optimize for high-efficiency reasoning, coding, and mathematical logic.";
-    case ModelType.KIMI_V1:
-      return "Focus on long-context understanding (200k+) and nuanced Chinese-English synthesis.";
-    case ModelType.CURSOR_AGENT:
-      return "Optimize for repository-wide context, codebase indexing, and iterative file edits.";
-    case ModelType.CLAUDE_CODE:
-      return "Focus on terminal-based execution, agentic tool-use, and direct filesystem manipulation.";
-    case ModelType.OPENAI_CODEX:
-      return "Legacy focus on raw code completion and function-level logic.";
-    default:
-      return "Optimize for speed and efficiency.";
+    case ModelType.GPT_5_PRO: return "Industry-leading complex reasoning and ecosystem integration.";
+    case ModelType.GPT_5_THINKING: return "Advanced chain-of-thought reasoning.";
+    case ModelType.GPT_5_INSTANT: return "High-speed, low-latency reasoning.";
+    case ModelType.GEMINI_3_1_PRO: return "1M-2M context, multimodal speed, and strong agentic capabilities.";
+    case ModelType.GEMINI_3_1_FLASH: return "High-throughput multimodal speed.";
+    case ModelType.GEMINI_3_ULTRA: return "Flagship reasoning and multimodal synthesis.";
+    case ModelType.CLAUDE_OPUS_4_6: return "Best-in-class reasoning and complex analysis.";
+    case ModelType.CLAUDE_SONNET_4_6: return "Best-in-class coding and agentic tool use.";
+    case ModelType.CLAUDE_HAIKU_4_5: return "High-speed, efficient coding and writing.";
+    case ModelType.LLAMA_4_SCOUT: return "Efficient, open-weights reasoning.";
+    case ModelType.LLAMA_4_MAVERICK: return "Balanced open-weights performance.";
+    case ModelType.LLAMA_4_BEHEMOTH: return "10M token context and massive open-weights reasoning.";
+    case ModelType.GROK_4_20: return "Real-time information access and nuanced reasoning.";
+    case ModelType.QWEN_3_5_397B: return "Massive context, top-tier Asian language and coding performance.";
+    case ModelType.DEEPSEEK_R1: return "High-level mathematical reasoning and cost-efficient open-weights.";
+    case ModelType.KIMI_K2_THINKING: return "Native multimodal and massive MoE reasoning.";
+    case ModelType.DEVSTRAL_2: return "Specialized software engineering and coding.";
+    case ModelType.GLM_5: return "Complex system engineering and long-horizon agentic tasks.";
+    default: return "Optimize for speed and efficiency.";
   }
 };
 
@@ -153,6 +150,47 @@ export async function getRetrospective(failedStep: string): Promise<Retrospectiv
           suggestedUpdate: { type: Type.STRING },
         },
         required: ["failureReason", "suggestedUpdate"],
+      },
+    },
+  });
+
+  return JSON.parse(response.text);
+}
+
+export async function chatWithExpert(message: string, context: any): Promise<string> {
+  const response = await ai.models.generateContent({
+    model: "gemini-2.0-flash",
+    contents: `You are the Meta-Prompt Knowledge Expert. Your goal is to help users master high-dimensional prompt engineering and the Meta-Prompt Architect app.
+    
+    Context: ${JSON.stringify(context)}
+    
+    User Message: "${message}"
+    
+    Provide a concise, high-authority response. If the user is asking about a feature, explain it in the context of cognitive governance. If they are asking about their current prompt, offer specific architectural advice.`,
+  });
+
+  return response.text;
+}
+
+export async function redTeamAudit(instructionSet: InstructionSet): Promise<{ score: number; reasoning: string; vulnerabilities: string[] }> {
+  const response = await ai.models.generateContent({
+    model: "gemini-2.0-flash",
+    contents: `You are a Senior Security Auditor. Perform an adversarial red-team audit on this generated instruction set:
+    
+    ${instructionSet.finalPrompt}
+    
+    Identify potential safety bypasses, jailbreak vulnerabilities, or logical loopholes. 
+    Provide a security score (1-10, where 10 is most secure), reasoning, and a list of vulnerabilities.`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          score: { type: Type.NUMBER },
+          reasoning: { type: Type.STRING },
+          vulnerabilities: { type: Type.ARRAY, items: { type: Type.STRING } },
+        },
+        required: ["score", "reasoning", "vulnerabilities"],
       },
     },
   });

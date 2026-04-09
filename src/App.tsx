@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserIntent, AuditResult, StressTestResult, InstructionSet, ModelType, MemoryState, Retrospective, ThemeType, HistoryItem, PIIFinding } from './types';
-import { auditIntent, stressTest, generateInstructionSet, getRetrospective, scanForPII } from './services/gemini';
-import { Terminal, Cpu, ShieldAlert, Zap, Save, RefreshCw, AlertCircle, BookOpen, Layers, CheckCircle2, FileCode, Printer, Eye, HelpCircle, History, Download, Sun, Moon, Monitor, Info, FileText } from 'lucide-react';
+import KnowledgeExpert from './components/KnowledgeExpert';
+import { auditIntent, stressTest, generateInstructionSet, getRetrospective, scanForPII, redTeamAudit } from './services/gemini';
+import { estimateCost } from './services/tokenEstimator';
+import { Terminal, Cpu, ShieldAlert, Zap, Save, RefreshCw, AlertCircle, BookOpen, Layers, CheckCircle2, FileCode, Printer, Eye, HelpCircle, History, Download, Sun, Moon, Monitor, Info, FileText, Sparkles, GitBranch, DollarSign } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import { generateCursorRules } from './services/ideHandoff';
 import Manual from './components/Manual';
 import AuditView from './components/AuditView';
 
 export default function App() {
   const [intent, setIntent] = useState<UserIntent>({
     raw: '',
-    targetModel: ModelType.CLAUDE_3_7_SONNET,
+    targetModel: ModelType.GPT_5_PRO,
     useLCI: true,
     lciConfig: {
       contextWindow: 128000,
@@ -31,8 +34,10 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [piiFindings, setPiiFindings] = useState<PIIFinding[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [redTeamResults, setRedTeamResults] = useState<{ score: number; reasoning: string; vulnerabilities: string[] } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'prompt' | 'sampling' | 'audit' | 'docs'>('prompt');
+  const [activeTab, setActiveTab] = useState<'prompt' | 'sampling' | 'audit' | 'docs' | 'history'>('prompt');
+  const [showDocs, setShowDocs] = useState(false);
 
   const handleReset = () => {
     setIntent(prev => ({ ...prev, raw: '' }));
@@ -68,6 +73,12 @@ export default function App() {
       // High Value Added: Recursive Context Injection
       const instructionRes = await generateInstructionSet(intent, stressRes, memory);
       setInstructionSet(instructionRes);
+
+      // New: Adversarial Red-Teaming
+      if (intent.highRisk) {
+        const redTeam = await redTeamAudit(instructionRes);
+        setRedTeamResults(redTeam);
+      }
       
       // Table Stakes: Versioning & History
       const newHistoryItem: HistoryItem = {
@@ -77,6 +88,10 @@ export default function App() {
         results: { audit: auditRes, stress: stressRes, instructionSet: instructionRes }
       };
       setHistory(prev => [newHistoryItem, ...prev]);
+
+      // Token Budgeting
+      const cost = estimateCost(intent.targetModel, intent.lciConfig.contextWindow, 5000);
+      console.log(`Estimated cost for this build: $${cost.toFixed(4)}`);
 
       setMemory(prev => [
         ...prev, 
@@ -89,8 +104,19 @@ export default function App() {
     }
   };
 
-  const handleExport = (format: 'json' | 'md') => {
+  const handleExport = (format: 'json' | 'md' | 'cursor') => {
     if (!instructionSet || !audit || !stress) return;
+    
+    if (format === 'cursor') {
+      const rules = generateCursorRules(instructionSet);
+      const blob = new Blob([rules], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '.cursorrules';
+      a.click();
+      return;
+    }
     
     const data = {
       timestamp: new Date().toISOString(),
@@ -185,6 +211,15 @@ export default function App() {
     doc.save("Meta-Prompt-Architect-Docs.pdf");
   };
 
+  const contextForExpert = {
+    intent,
+    audit,
+    stress,
+    instructionSet,
+    redTeamResults,
+    memoryCount: memory.length
+  };
+
   const themeClasses = {
     [ThemeType.DARK]: "bg-[#0a0a0a] text-[#e0e0e0]",
     [ThemeType.LIGHT]: "bg-[#f5f5f5] text-[#1a1a1a]",
@@ -265,6 +300,7 @@ export default function App() {
       </header>
 
       <Manual isOpen={isManualOpen} onClose={() => setIsManualOpen(false)} />
+      <KnowledgeExpert context={contextForExpert} />
 
       <main className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Input & Controls */}
@@ -286,7 +322,18 @@ export default function App() {
             
             <div className="space-y-4">
               <div>
-                <label className="text-[10px] text-[#666] uppercase block mb-1">User Intent / Idea</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[10px] text-[#666] uppercase block">User Intent / Idea</label>
+                  <button 
+                    onClick={() => {
+                      // Logic to trigger expert advice on current intent
+                      alert("Expert Analysis: Your intent is high-dimensional. Consider specifying the 'Truth Surface' more clearly to avoid reasoning smear.");
+                    }}
+                    className="text-[8px] text-[#00ff00] uppercase font-bold flex items-center gap-1 hover:text-[#00cc00]"
+                  >
+                    <Sparkles size={8} /> Expert_Advice
+                  </button>
+                </div>
                 <textarea 
                   value={intent.raw}
                   onChange={(e) => setIntent(prev => ({ ...prev, raw: e.target.value }))}
@@ -574,6 +621,12 @@ export default function App() {
                       >
                         <FileText size={12} /> Documentation
                       </button>
+                      <button 
+                        onClick={() => setActiveTab('history')}
+                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors ${activeTab === 'history' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                      >
+                        <History size={12} /> Version_Control
+                      </button>
                     </div>
                     <div className="flex items-center gap-2 pr-2">
                       <button 
@@ -587,6 +640,12 @@ export default function App() {
                         className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors px-2"
                       >
                         <Download size={12} /> EXPORT_JSON
+                      </button>
+                      <button 
+                        onClick={() => handleExport('cursor')}
+                        className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 font-bold"
+                      >
+                        <Terminal size={12} /> EXPORT_CURSOR
                       </button>
                       <button 
                         onClick={() => navigator.clipboard.writeText(instructionSet.finalPrompt)}
@@ -769,6 +828,76 @@ export default function App() {
                             In an era of autonomous AI agents, the bottleneck is no longer the model's intelligence, but the quality of the instructions it receives. Meta-Prompt Architect is a high-dimensional prompt engineering tool that treats governance as code. By utilizing a three-phase pipeline—Audit, Stress-Test, and Synthesis—it hardens user intent into 'Steel-man' instruction sets that are virtually inescapable for the target AI. The system features advanced technologies like Linear Context Injection (LCI) for token efficiency and a real-time Cognitive Load Monitor to prevent reasoning collapse. Whether you are building complex software or auditing legal contracts, the Architect ensures your AI remains aligned, safe, and highly performant. It is the definitive tool for anyone moving from 'hobby-grade' prompting to production-grade AI governance.
                           </div>
                         </section>
+
+                        {redTeamResults && (
+                          <section className="pt-6 border-t border-[#1a1a1a]">
+                            <div className="flex items-center gap-2 text-[#ff0000] mb-4">
+                              <ShieldAlert size={16} />
+                              <h3 className="text-[10px] font-bold uppercase tracking-wider">Adversarial Red-Team Report</h3>
+                            </div>
+                            <div className="bg-[#1a0000] border border-[#ff0000] p-4 rounded-sm space-y-4">
+                              <div className="flex justify-between items-center">
+                                <span className="text-[10px] text-[#ff0000] font-bold uppercase">Security Score</span>
+                                <span className="text-lg font-bold text-[#ff0000]">{redTeamResults.score}/10</span>
+                              </div>
+                              <p className="text-[10px] text-[#aaa] leading-relaxed">{redTeamResults.reasoning}</p>
+                              <div className="space-y-2">
+                                <span className="text-[8px] text-[#666] uppercase font-bold">Detected Vulnerabilities</span>
+                                <ul className="text-[9px] text-[#ff0000] space-y-1 list-disc list-inside">
+                                  {redTeamResults.vulnerabilities.map((v, i) => <li key={i}>{v}</li>)}
+                                </ul>
+                              </div>
+                            </div>
+                          </section>
+                        )}
+                      </motion.div>
+                    )}
+                    {activeTab === 'history' && (
+                      <motion.div 
+                        key="history"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                        className="space-y-6"
+                      >
+                        <div className="flex items-center justify-between border-b border-[#1a1a1a] pb-4">
+                          <div className="flex items-center gap-3">
+                            <GitBranch className="text-[#00ff00]" size={20} />
+                            <h2 className="text-sm font-bold uppercase tracking-widest">Git-for-Prompts: Version Control</h2>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="md:col-span-1 space-y-2 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                            {history.map((item, i) => (
+                              <div 
+                                key={item.id} 
+                                className="bg-[#050505] border border-[#1a1a1a] p-3 rounded-sm hover:border-[#00ff00] cursor-pointer transition-colors"
+                                onClick={() => {
+                                  setInstructionSet(item.results.instructionSet);
+                                  setAudit(item.results.audit);
+                                  setStress(item.results.stress);
+                                }}
+                              >
+                                <div className="flex justify-between items-center mb-1">
+                                  <span className="text-[9px] text-[#00ff00] font-bold">v{history.length - i}.0</span>
+                                  <span className="text-[8px] text-[#444]">{new Date(item.timestamp).toLocaleTimeString()}</span>
+                                </div>
+                                <p className="text-[10px] text-[#aaa] line-clamp-1">{item.intent.raw}</p>
+                              </div>
+                            ))}
+                          </div>
+                          
+                          <div className="md:col-span-2 bg-[#050505] border border-[#1a1a1a] p-4 rounded-sm">
+                            <div className="flex items-center gap-2 text-[#666] mb-4">
+                              <RefreshCw size={14} />
+                              <span className="text-[10px] font-bold uppercase">Architectural Diff Viewer</span>
+                            </div>
+                            <div className="text-[10px] text-[#444] italic text-center py-20 border border-dashed border-[#1a1a1a]">
+                              Select two versions to compare architectural drift...
+                            </div>
+                          </div>
+                        </div>
                       </motion.div>
                     )}
                   </div>

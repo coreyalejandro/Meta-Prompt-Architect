@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Book, Target, Zap, Shield, Layers, Cpu, Terminal, CheckCircle2, Info, HelpCircle, X } from 'lucide-react';
+import { Book, Target, Zap, Shield, Layers, Cpu, Terminal, CheckCircle2, Info, HelpCircle, X, ShieldAlert, GitBranch, Share2, BarChart3, MessageSquare } from 'lucide-react';
 
 interface ManualProps {
   isOpen: boolean;
@@ -43,13 +43,13 @@ export default function Manual({ isOpen, onClose }: ManualProps) {
       <motion.div 
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
-        className="bg-[#0f0f0f] border border-[#1a1a1a] w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col rounded-sm shadow-2xl"
+        className="bg-[#0f0f0f] border border-[#1a1a1a] w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col rounded-sm shadow-2xl"
       >
         {/* Header */}
         <div className="border-b border-[#1a1a1a] p-4 flex items-center justify-between bg-[#050505]">
           <div className="flex items-center gap-3">
             <Book className="text-[#00ff00]" size={20} />
-            <h2 className="text-sm font-bold uppercase tracking-widest">Operator's Manual: Meta-Prompt Architect</h2>
+            <h2 className="text-sm font-bold uppercase tracking-widest">Golden Documentation: Meta-Prompt Architect v2.0</h2>
           </div>
           <button 
             onClick={onClose}
@@ -66,150 +66,135 @@ export default function Manual({ isOpen, onClose }: ManualProps) {
           <section className="space-y-4">
             <div className="flex items-center gap-2 text-[#00ff00]">
               <Target size={18} />
-              <h3 className="text-xs font-bold uppercase tracking-wider">01. The Core Concept (The "Why")</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wider">01. Cognitive Governance (The "Why")</h3>
             </div>
             <p className="text-sm text-[#aaa] leading-relaxed">
-              Standard AI prompts often fail because they are too vague. This tool acts as a <span className="text-[#e0e0e0] font-bold">Cognitive Governance Layer</span>. 
-              It takes your raw idea and transforms it into a high-dimensional instruction set that "survives" the complexity of modern LLMs.
+              Standard AI prompts often fail because they lack structural logic and fail to account for edge cases. This tool acts as a <span className="text-[#e0e0e0] font-bold">Cognitive Governance Layer</span>, transforming vague human ideas into "Steel-man" instruction sets that are virtually inescapable for target AI models.
             </p>
             <div className="bg-[#050505] border border-[#1a1a1a] p-4 rounded-sm border-l-2 border-l-[#00ff00]">
               <p className="text-[11px] text-[#888] italic">
-                "Think of it like an architect's blueprint. You don't just tell a builder 'make a house'; you give them precise measurements, material lists, and structural constraints."
+                "We don't just prompt; we architect. Every build is a high-dimensional contract between human intent and machine execution."
               </p>
             </div>
           </section>
 
-          {/* Section 2: The Pipeline Steps */}
+          {/* Section 2: Advanced Governance Features */}
           <section className="space-y-6">
             <div className="flex items-center gap-2 text-[#00ff00]">
-              <Layers size={18} />
-              <h3 className="text-xs font-bold uppercase tracking-wider">02. The Pipeline (The "How")</h3>
+              <Shield size={18} />
+              <h3 className="text-xs font-bold uppercase tracking-wider">02. Advanced Governance (The "Guardian")</h3>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-[#050505] border border-[#1a1a1a] p-4 rounded-sm">
+                <div className="flex items-center gap-2 text-[#ff0000] mb-2">
+                  <ShieldAlert size={14} />
+                  <span className="text-[10px] font-bold uppercase">Adversarial Red-Teaming</span>
+                </div>
+                <p className="text-[10px] text-[#666]">
+                  Automatically tests generated prompts for safety bypasses and logical vulnerabilities before they reach the target session.
+                </p>
+              </div>
+              <div className="bg-[#050505] border border-[#1a1a1a] p-4 rounded-sm">
+                <div className="flex items-center gap-2 text-[#00ff00] mb-2">
+                  <BarChart3 size={14} />
+                  <span className="text-[10px] font-bold uppercase">Constitutional Mapping</span>
+                </div>
+                <p className="text-[10px] text-[#666]">
+                  Traces every Verification Gate back to specific regulatory or safety standards (e.g., EU AI Act, NIST).
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* Section 3: Developer Workflow */}
+          <section className="space-y-6">
+            <div className="flex items-center gap-2 text-[#00ff00]">
+              <Terminal size={18} />
+              <h3 className="text-xs font-bold uppercase tracking-wider">03. Developer Workflow (The "Builder")</h3>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-[#00ff00]">
-                  <Terminal size={14} />
-                  <span className="text-[10px] font-bold uppercase">Environmental Scan</span>
+                  <GitBranch size={14} />
+                  <span className="text-[10px] font-bold uppercase">Git-for-Prompts</span>
                 </div>
                 <p className="text-[10px] text-[#666]">
-                  The system scans your intent for hidden assumptions and edge cases. It finds the "Truth Surface"—the facts the AI needs to know.
+                  Full version control for your prompts. Commit, branch, and diff architectural iterations with ease.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-[#0088ff]">
+                  <Share2 size={14} />
+                  <span className="text-[10px] font-bold uppercase">Direct IDE Handoff</span>
+                </div>
+                <p className="text-[10px] text-[#666]">
+                  One-click export for Cursor, Claude Code, and agentic IDEs. Generates `.cursorrules` automatically.
                 </p>
               </div>
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-[#ffaa00]">
                   <Cpu size={14} />
-                  <span className="text-[10px] font-bold uppercase">Stress Test</span>
+                  <span className="text-[10px] font-bold uppercase">Token Budgeting</span>
                 </div>
                 <p className="text-[10px] text-[#666]">
-                  A "Critic" persona tries to break the prompt. We resolve these tensions into a "Steel-man" version that is much harder to confuse.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-[#0088ff]">
-                  <Zap size={14} />
-                  <span className="text-[10px] font-bold uppercase">Instruction Synthesis</span>
-                </div>
-                <p className="text-[10px] text-[#666]">
-                  The final prompt is built using <span className="text-[#00ff00]">Verbalized Sampling</span>, choosing the best architecture (CoT, Few-Shot, etc.) for your specific goal.
+                  Real-time cost estimation and hard guardrails for recursive AI pipelines to prevent runaway spend.
                 </p>
               </div>
             </div>
           </section>
 
-          {/* Section 3: Advanced Controls */}
+          {/* Section 4: On-Demand Support */}
+          <section className="bg-[#001100] border border-[#004400] p-6 rounded-sm space-y-4">
+            <div className="flex items-center gap-2 text-[#00ff00]">
+              <MessageSquare size={18} />
+              <h3 className="text-xs font-bold uppercase tracking-wider">04. Knowledge Expert (On-Demand)</h3>
+            </div>
+            <p className="text-[11px] text-[#aaa] leading-relaxed">
+              Stuck on a complex build? Use the <span className="text-[#00ff00] font-bold">floating Expert bubble</span> in the bottom-right corner. Our integrated AI assistant has full context of your current build and can provide real-time architectural advice.
+            </p>
+          </section>
+
+          {/* Section 5: Mastery Controls */}
           <section className="space-y-4">
             <div className="flex items-center gap-2 text-[#00ff00]">
               <Zap size={18} />
-              <h3 className="text-xs font-bold uppercase tracking-wider">03. Advanced Controls (Mastery)</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wider">05. Mastery Controls (LCI & Sampling)</h3>
             </div>
-            <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-[#050505] border border-[#1a1a1a] p-4 rounded-sm">
-                <h4 className="text-[10px] font-bold text-[#e0e0e0] uppercase mb-2">LCI (Token Squeezing)</h4>
-                <p className="text-[11px] text-[#aaa] mb-3">
-                  Use this for long-running tasks. It compresses the context so the AI doesn't "forget" earlier instructions.
+                <h4 className="text-[10px] font-bold text-[#e0e0e0] uppercase mb-2">LCI (Linear Context Injection)</h4>
+                <p className="text-[10px] text-[#666] mb-3">
+                  Proprietary "token squeezing" technology to maximize context window efficiency for long-running tasks.
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-3 bg-[#0f0f0f] border border-[#1a1a1a]">
-                    <span className="text-[9px] text-[#00ff00] uppercase block font-bold mb-1">Context Window</span>
-                    <p className="text-[10px] text-[#666]">Sets the "memory buffer" size. For complex apps, use 128k+. For massive builds, push to 1M.</p>
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <span className="text-[8px] text-[#00ff00] uppercase block font-bold mb-1">Context Window</span>
+                    <p className="text-[9px] text-[#444]">Buffer size for memory stability.</p>
                   </div>
-                  <div className="p-3 bg-[#0f0f0f] border border-[#1a1a1a]">
-                    <span className="text-[9px] text-[#00ff00] uppercase block font-bold mb-1">Compression Ratio</span>
-                    <p className="text-[10px] text-[#666]">1:1 is raw data. 20:1 is highly abstract. Higher ratios save tokens but may lose nuance.</p>
+                  <div className="flex-1">
+                    <span className="text-[8px] text-[#00ff00] uppercase block font-bold mb-1">Compression Ratio</span>
+                    <p className="text-[9px] text-[#444]">Nuance vs. Token efficiency.</p>
                   </div>
                 </div>
               </div>
-
               <div className="bg-[#050505] border border-[#1a1a1a] p-4 rounded-sm">
                 <h4 className="text-[10px] font-bold text-[#e0e0e0] uppercase mb-2">Verbalized Sampling</h4>
-                <p className="text-[11px] text-[#aaa] mb-3">
-                  This is the "internal monologue" of the AI. It evaluates multiple prompt architectures before picking the winner.
-                </p>
-                <div className="flex items-center gap-4 text-[10px] text-[#666]">
-                  <div className="flex items-center gap-1">
-                    <Tooltip text="Chain-of-Thought (CoT) encourages the model to reason step-by-step, improving accuracy for complex logic.">
-                      <Info size={12} className="cursor-help" />
-                    </Tooltip>
-                    CoT
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Tooltip text="Few-Shot provides the model with specific examples of the desired output format to set a clear pattern.">
-                      <Info size={12} className="cursor-help" />
-                    </Tooltip>
-                    Few-Shot
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Tooltip text="Role-Based framing assigns a specific expert persona to the model to influence its tone and depth.">
-                      <Info size={12} className="cursor-help" />
-                    </Tooltip>
-                    Role-Based
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-[#050505] border border-[#1a1a1a] p-4 rounded-sm">
-                <h4 className="text-[10px] font-bold text-[#e0e0e0] uppercase mb-2">Error Correction</h4>
-                <p className="text-[11px] text-[#aaa]">
-                  If a prompt fails, paste the error log into the <span className="text-[#ff0000]">Retrospective</span> panel. The system will perform a forensic audit to fix the underlying "Contract".
+                <p className="text-[10px] text-[#666] mb-3">
+                  The system's internal monologue. It evaluates multiple architectures (CoT, Few-Shot, Role-Based) before selecting the optimal path.
                 </p>
               </div>
             </div>
           </section>
 
-          {/* Section 4: Inclusion & Feedback */}
-          <section className="bg-[#001100] border border-[#004400] p-6 rounded-sm space-y-4">
-            <div className="flex items-center gap-2 text-[#00ff00]">
-              <HelpCircle size={18} />
-              <h3 className="text-xs font-bold uppercase tracking-wider">Inclusion & Feedback</h3>
-            </div>
-            <div className="space-y-4">
-              <p className="text-[11px] text-[#aaa] leading-relaxed">
-                We believe in an <span className="text-[#e0e0e0] font-bold">all-inclusive design</span>. Neurodiversity is a core strength of the cognitive landscape, and this system is built to be accessible and powerful for every mind.
-              </p>
-              <ul className="space-y-3">
-                <li className="flex gap-3">
-                  <CheckCircle2 size={14} className="text-[#00ff00] shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-[#aaa]">
-                    <span className="text-[#e0e0e0] font-bold">Deep-Dive Analysis:</span> Use the "Cognitive Audit" tab to inspect raw system data for full transparency into the generation process.
-                  </p>
-                </li>
-              </ul>
-              <div className="pt-2 border-t border-[#004400]">
-                <p className="text-[10px] text-[#666] uppercase mb-2">Have feedback?</p>
-                <p className="text-[11px] text-[#aaa]">
-                  Your insights help us evolve. Please share your thoughts on how we can improve the cognitive experience via the system console.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <footer className="pt-8 text-center">
+          <footer className="pt-8 text-center border-t border-[#1a1a1a]">
+            <p className="text-[10px] text-[#444] uppercase mb-4 tracking-widest">Version 2.0 | Cognitive Governance Protocol</p>
             <button 
               onClick={onClose}
-              className="bg-[#00ff00] text-[#000] px-8 py-3 text-xs font-bold uppercase tracking-widest hover:bg-[#00cc00] transition-all"
+              className="bg-[#00ff00] text-[#000] px-12 py-4 text-xs font-bold uppercase tracking-widest hover:bg-[#00cc00] transition-all shadow-[0_0_20px_rgba(0,255,0,0.2)]"
             >
-              Acknowledge & Begin
+              Initialize Architect Session
             </button>
           </footer>
         </div>
