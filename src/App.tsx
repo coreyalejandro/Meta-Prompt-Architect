@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserIntent, AuditResult, StressTestResult, InstructionSet, ModelType, MemoryState, Retrospective, ThemeType, HistoryItem, PIIFinding } from './types';
+import { z } from 'zod';
+import { UserIntent, AuditResult, StressTestResult, InstructionSet, ModelType, MemoryState, Retrospective, ThemeType, HistoryItem, PIIFinding, HistoryItemSchema, MemoryStateSchema } from './types';
 import KnowledgeExpert from './components/KnowledgeExpert';
 import { auditIntent, stressTest, generateInstructionSet, getRetrospective, scanForPII, redTeamAudit } from './services/gemini';
 import { estimateCost } from './services/tokenEstimator';
@@ -9,6 +10,7 @@ import { jsPDF } from 'jspdf';
 import { generateCursorRules } from './services/ideHandoff';
 import Manual from './components/Manual';
 import AuditView from './components/AuditView';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 export default function App() {
   const [intent, setIntent] = useState<UserIntent>({
@@ -27,19 +29,61 @@ export default function App() {
   const [instructionSet, setInstructionSet] = useState<InstructionSet | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [memory, setMemory] = useState<MemoryState[]>([]);
+  const [memory, setMemory] = useState<MemoryState[]>(() => {
+    try {
+      const saved = localStorage.getItem('architect_memory');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return z.array(MemoryStateSchema).parse(parsed);
+      }
+    } catch (e) {
+      console.error('Failed to parse memory from localStorage', e);
+    }
+    return [];
+  });
   const [failedStep, setFailedStep] = useState('');
   const [retrospective, setRetrospective] = useState<Retrospective | null>(null);
   const [isManualOpen, setIsManualOpen] = useState(true);
-  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [history, setHistory] = useState<HistoryItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('architect_history');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return z.array(HistoryItemSchema).parse(parsed);
+      }
+    } catch (e) {
+      console.error('Failed to parse history from localStorage', e);
+    }
+    return [];
+  });
   const [piiFindings, setPiiFindings] = useState<PIIFinding[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [redTeamResults, setRedTeamResults] = useState<{ score: number; reasoning: string; vulnerabilities: string[] } | null>(null);
 
   const [activeTab, setActiveTab] = useState<'prompt' | 'sampling' | 'audit' | 'docs' | 'history'>('prompt');
   const [showDocs, setShowDocs] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('architect_history', JSON.stringify(history));
+  }, [history]);
+
+  useEffect(() => {
+    localStorage.setItem('architect_memory', JSON.stringify(memory));
+  }, [memory]);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   const handleReset = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
     setIntent(prev => ({ ...prev, raw: '' }));
     setAudit(null);
     setStress(null);
@@ -52,13 +96,13 @@ export default function App() {
 
   const handleRedactPII = () => {
     let redactedText = intent.raw;
-    // Sort findings by index descending to avoid offset issues when replacing
-    const sortedFindings = [...piiFindings].sort((a, b) => b.index - a.index);
     
-    sortedFindings.forEach(finding => {
-      redactedText = redactedText.substring(0, finding.index) + 
-                     `[REDACTED ${finding.type}]` + 
-                     redactedText.substring(finding.index + finding.value.length);
+    // Use regex replacement instead of raw index manipulation to safely handle Unicode/surrogate pairs
+    piiFindings.forEach(finding => {
+      // Escape the finding value for safe regex usage
+      const escapedValue = finding.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escapedValue, 'g');
+      redactedText = redactedText.replace(regex, `[REDACTED ${finding.type}]`);
     });
 
     setIntent(prev => ({ ...prev, raw: redactedText }));
@@ -70,6 +114,12 @@ export default function App() {
 
   const handleGenerate = async () => {
     if (!intent.raw) return;
+    
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
     
     // Essential: PII Scanning
     const findings = scanForPII(intent.raw);
@@ -83,13 +133,13 @@ export default function App() {
     setError(null);
     setPiiFindings([]);
     try {
-      const auditRes = await auditIntent(intent);
+      const auditRes = await auditIntent(intent, signal);
       setAudit(auditRes);
-      const stressRes = await stressTest(intent, auditRes);
+      const stressRes = await stressTest(intent, auditRes, signal);
       setStress(stressRes);
       
       // High Value Added: Recursive Context Injection
-      const instructionRes = await generateInstructionSet(intent, stressRes, memory);
+      const instructionRes = await generateInstructionSet(intent, stressRes, memory, signal);
       setInstructionSet(instructionRes);
 
       // New: Adversarial Red-Teaming
@@ -105,7 +155,8 @@ export default function App() {
         intent: { ...intent },
         results: { audit: auditRes, stress: stressRes, instructionSet: instructionRes }
       };
-      setHistory(prev => [newHistoryItem, ...prev]);
+      // Prune history to last 50 items to prevent localStorage overflow
+      setHistory(prev => [newHistoryItem, ...prev].slice(0, 50));
 
       // Token Budgeting
       const cost = estimateCost(intent.targetModel, intent.lciConfig.contextWindow, 5000);
@@ -116,6 +167,10 @@ export default function App() {
         { key: `intent_${Date.now()}`, value: intent.raw, lastUpdated: new Date().toISOString() }
       ]);
     } catch (err) {
+      if (err instanceof Error && err.message === 'AbortError') {
+        console.log('Generation aborted');
+        return;
+      }
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setLoading(false);
@@ -133,6 +188,7 @@ export default function App() {
       a.href = url;
       a.download = '.cursorrules';
       a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 100);
       return;
     }
     
@@ -154,6 +210,7 @@ export default function App() {
     a.href = url;
     a.download = `meta_prompt_audit_${Date.now()}.${format}`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
   const handleBoxExport = (title: string, data: any, format: 'json' | 'md') => {
@@ -169,6 +226,7 @@ export default function App() {
     a.href = url;
     a.download = `${title.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}.${format}`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
   const handleBoxCopy = (data: any) => {
@@ -176,10 +234,34 @@ export default function App() {
     navigator.clipboard.writeText(content);
   };
 
+  const handleCopyFullStack = () => {
+    if (!instructionSet) return;
+    const fullText = `
+# SYSTEM ROLE
+${instructionSet.systemRole}
+
+# COGNITIVE STACK
+${instructionSet.cognitiveStack.map(s => `- ${s}`).join('\n')}
+
+# VERIFICATION GATES
+${instructionSet.verificationGates.map(g => `- ${g}`).join('\n')}
+
+# HANDOFF ARTIFACTS
+${instructionSet.handoffArtifacts.map(a => `- ${a}`).join('\n')}
+
+# FINAL PROMPT
+${instructionSet.finalPrompt}
+`.trim();
+    navigator.clipboard.writeText(fullText);
+  };
+
   const getCognitiveLoad = () => {
     if (!instructionSet) return 0;
-    const complexity = (instructionSet.cognitiveStack.length * 10) + (instructionSet.verificationGates.length * 5);
-    return Math.min(100, complexity);
+    const stackComplexity = instructionSet.cognitiveStack.length * 10;
+    const gatesComplexity = instructionSet.verificationGates.length * 5;
+    const textComplexity = Math.floor(instructionSet.finalPrompt.length / 100);
+    const complexity = stackComplexity + gatesComplexity + textComplexity;
+    return Math.min(100, Math.max(0, complexity));
   };
 
   const getCognitiveLoadMessage = () => {
@@ -274,11 +356,22 @@ export default function App() {
 
   const handleRetrospective = async () => {
     if (!failedStep) return;
+    
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     setLoading(true);
     try {
-      const res = await getRetrospective(failedStep);
+      const res = await getRetrospective(failedStep, signal);
       setRetrospective(res);
     } catch (err) {
+      if (err instanceof Error && err.message === 'AbortError') {
+        console.log('Retrospective aborted');
+        return;
+      }
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setLoading(false);
@@ -286,10 +379,11 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen font-mono selection:bg-[#00ff00] selection:text-[#000] transition-colors duration-300 ${themeClasses[intent.theme]}`}>
-      {/* Header */}
-      <header className={`border-b p-4 flex items-center justify-between sticky top-0 z-50 ${intent.theme === ThemeType.LIGHT ? 'bg-white border-gray-200' : 'bg-[#0f0f0f] border-[#1a1a1a]'}`}>
-        <div className="flex items-center gap-3">
+    <ErrorBoundary>
+      <div className={`min-h-screen font-mono selection:bg-[#00ff00] selection:text-[#000] transition-colors duration-300 ${themeClasses[intent.theme]}`}>
+        {/* Header */}
+        <header className={`border-b p-4 flex items-center justify-between sticky top-0 z-50 ${intent.theme === ThemeType.LIGHT ? 'bg-white border-gray-200' : 'bg-[#0f0f0f] border-[#1a1a1a]'}`}>
+          <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-[#00ff00] rounded-sm flex items-center justify-center text-[#000]">
             <Layers size={20} />
           </div>
@@ -429,8 +523,20 @@ export default function App() {
                       checked={intent.useLCI}
                       onChange={(e) => setIntent(prev => ({ ...prev, useLCI: e.target.checked }))}
                       className="hidden"
+                      aria-label="Enable Linear Context Injection"
                     />
-                    <div className={`w-3 h-3 border border-[#1a1a1a] flex items-center justify-center transition-colors ${intent.useLCI ? 'bg-[#00ff00] border-[#00ff00]' : 'bg-[#050505]'}`}>
+                    <div 
+                      className={`w-3 h-3 border border-[#1a1a1a] flex items-center justify-center transition-colors ${intent.useLCI ? 'bg-[#00ff00] border-[#00ff00]' : 'bg-[#050505]'}`}
+                      role="checkbox"
+                      aria-checked={intent.useLCI}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setIntent(prev => ({ ...prev, useLCI: !prev.useLCI }));
+                        }
+                      }}
+                    >
                       {intent.useLCI && <div className="w-1.5 h-1.5 bg-[#000]" />}
                     </div>
                     <span className="text-[10px] text-[#666] group-hover:text-[#e0e0e0] transition-colors uppercase tracking-tighter">LCI_ACTIVE</span>
@@ -489,8 +595,20 @@ export default function App() {
                       checked={intent.highRisk}
                       onChange={(e) => setIntent(prev => ({ ...prev, highRisk: e.target.checked }))}
                       className="hidden"
+                      aria-label="Enable High Risk Audit"
                     />
-                    <div className={`w-3 h-3 border border-[#1a1a1a] flex items-center justify-center transition-colors ${intent.highRisk ? 'bg-[#ff0000] border-[#ff0000]' : 'bg-[#050505]'}`}>
+                    <div 
+                      className={`w-3 h-3 border border-[#1a1a1a] flex items-center justify-center transition-colors ${intent.highRisk ? 'bg-[#ff0000] border-[#ff0000]' : 'bg-[#050505]'}`}
+                      role="checkbox"
+                      aria-checked={intent.highRisk}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setIntent(prev => ({ ...prev, highRisk: !prev.highRisk }));
+                        }
+                      }}
+                    >
                       {intent.highRisk && <div className="w-1.5 h-1.5 bg-[#000]" />}
                     </div>
                     <span className="text-[10px] text-[#666] group-hover:text-[#e0e0e0] transition-colors">HIGH_RISK_AUDIT</span>
@@ -619,7 +737,15 @@ export default function App() {
                 className="space-y-6"
               >
                 {/* Cognitive Load Monitor */}
-                <div className="bg-[#0f0f0f] border border-[#1a1a1a] p-4 rounded-sm">
+                <div 
+                  className="bg-[#0f0f0f] border border-[#1a1a1a] p-4 rounded-sm"
+                  role="meter"
+                  aria-label="Cognitive Load"
+                  aria-valuenow={getCognitiveLoad()}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-live="polite"
+                >
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-[10px] text-[#666] uppercase font-bold">Cognitive Load Monitor</span>
                     <span className={`text-[10px] font-bold ${getCognitiveLoad() > 80 ? 'text-[#ff0000]' : getCognitiveLoad() > 50 ? 'text-[#ffaa00]' : 'text-[#00ff00]'}`}>
@@ -715,10 +841,10 @@ export default function App() {
                         <Terminal size={12} /> EXPORT_CURSOR
                       </button>
                       <button 
-                        onClick={() => navigator.clipboard.writeText(instructionSet.finalPrompt)}
-                        className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors px-2 border-l border-[#333] ml-2 pl-2"
+                        onClick={handleCopyFullStack}
+                        className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 border-l border-[#333] ml-2 pl-2 font-bold"
                       >
-                        <Save size={12} /> COPY
+                        <Copy size={12} /> COPY FULL STACK
                       </button>
                     </div>
                   </div>
@@ -800,9 +926,22 @@ export default function App() {
 
                     {activeTab === 'sampling' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                        <div className="flex items-center gap-2 text-[#00ff00] mb-2">
-                          <Zap size={16} />
-                          <h4 className="text-xs font-bold uppercase tracking-wider">Advanced Verbalized Sampling Analysis</h4>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2 text-[#00ff00]">
+                            <Zap size={16} />
+                            <h4 className="text-xs font-bold uppercase tracking-wider">Advanced Verbalized Sampling Analysis</h4>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => handleBoxCopy(instructionSet.verbalizedSampling || "No sampling data available")} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Copy to clipboard">
+                              <Copy size={12} /> COPY
+                            </button>
+                            <button onClick={() => handleBoxExport('Verbalized Sampling Analysis', instructionSet.verbalizedSampling || "No sampling data available", 'json')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download JSON">
+                              <FileJson size={12} /> JSON
+                            </button>
+                            <button onClick={() => handleBoxExport('Verbalized Sampling Analysis', instructionSet.verbalizedSampling || "No sampling data available", 'md')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download Markdown">
+                              <FileText size={12} /> MD
+                            </button>
+                          </div>
                         </div>
                         <div className="bg-[#050505] border border-[#1a1a1a] p-6 rounded-sm">
                           <p className="text-[11px] text-[#aaa] leading-relaxed whitespace-pre-wrap italic">
@@ -829,9 +968,22 @@ export default function App() {
                     {activeTab === 'audit' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                         <div className="bg-[#050505] border border-[#1a1a1a] p-4 rounded-sm">
-                          <div className="flex items-center gap-2 text-[#00ff00] mb-4">
-                            <ShieldAlert size={14} />
-                            <h3 className="text-[10px] font-bold uppercase tracking-wider">Forensic Cognitive Printout</h3>
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2 text-[#00ff00]">
+                              <ShieldAlert size={14} />
+                              <h3 className="text-[10px] font-bold uppercase tracking-wider">Forensic Cognitive Printout</h3>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => handleBoxCopy({ audit, stress, instructionSet })} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Copy to clipboard">
+                                <Copy size={12} /> COPY
+                              </button>
+                              <button onClick={() => handleBoxExport('Forensic Cognitive Printout', { audit, stress, instructionSet }, 'json')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download JSON">
+                                <FileJson size={12} /> JSON
+                              </button>
+                              <button onClick={() => handleBoxExport('Forensic Cognitive Printout', { audit, stress, instructionSet }, 'md')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download Markdown">
+                                <FileText size={12} /> MD
+                              </button>
+                            </div>
                           </div>
                           <pre className="text-[9px] text-[#444] leading-tight overflow-x-auto">
                             {JSON.stringify({ audit, stress, instructionSet }, null, 2)}
@@ -911,9 +1063,22 @@ export default function App() {
 
                         {redTeamResults && (
                           <section className="pt-6 border-t border-[#1a1a1a]">
-                            <div className="flex items-center gap-2 text-[#ff0000] mb-4">
-                              <ShieldAlert size={16} />
-                              <h3 className="text-[10px] font-bold uppercase tracking-wider">Adversarial Red-Team Report</h3>
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center gap-2 text-[#ff0000]">
+                                <ShieldAlert size={16} />
+                                <h3 className="text-[10px] font-bold uppercase tracking-wider">Adversarial Red-Team Report</h3>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => handleBoxCopy(redTeamResults)} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Copy to clipboard">
+                                  <Copy size={12} /> COPY
+                                </button>
+                                <button onClick={() => handleBoxExport('Adversarial Red-Team Report', redTeamResults, 'json')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download JSON">
+                                  <FileJson size={12} /> JSON
+                                </button>
+                                <button onClick={() => handleBoxExport('Adversarial Red-Team Report', redTeamResults, 'md')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download Markdown">
+                                  <FileText size={12} /> MD
+                                </button>
+                              </div>
                             </div>
                             <div className="bg-[#1a0000] border border-[#ff0000] p-4 rounded-sm space-y-4">
                               <div className="flex justify-between items-center">
@@ -989,9 +1154,22 @@ export default function App() {
                 animate={{ opacity: 1, scale: 1 }}
                 className="bg-[#0f0f0f] border border-[#ff0000] p-8 rounded-sm space-y-6"
               >
-                <div className="flex items-center gap-3 text-[#ff0000]">
-                  <AlertCircle size={24} />
-                  <h2 className="text-lg font-bold uppercase tracking-widest">Retrospective Analysis</h2>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 text-[#ff0000]">
+                    <AlertCircle size={24} />
+                    <h2 className="text-lg font-bold uppercase tracking-widest">Retrospective Analysis</h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => handleBoxCopy(retrospective)} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Copy to clipboard">
+                      <Copy size={12} /> COPY
+                    </button>
+                    <button onClick={() => handleBoxExport('Retrospective Analysis', retrospective, 'json')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download JSON">
+                      <FileJson size={12} /> JSON
+                    </button>
+                    <button onClick={() => handleBoxExport('Retrospective Analysis', retrospective, 'md')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download Markdown">
+                      <FileText size={12} /> MD
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-6">
                   <div>
@@ -1061,7 +1239,8 @@ export default function App() {
           background: #222;
         }
       `}</style>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
 

@@ -20,6 +20,7 @@ export default function KnowledgeExpert({ context }: KnowledgeExpertProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -27,8 +28,22 @@ export default function KnowledgeExpert({ context }: KnowledgeExpertProps) {
     }
   }, [messages]);
 
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   const handleSend = async () => {
     if (!input.trim() || loading) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
 
     const userMsg = input.trim();
     setInput('');
@@ -36,9 +51,12 @@ export default function KnowledgeExpert({ context }: KnowledgeExpertProps) {
     setLoading(true);
 
     try {
-      const response = await chatWithExpert(userMsg, context);
+      const response = await chatWithExpert(userMsg, context, signal);
       setMessages(prev => [...prev, { role: 'assistant', content: response }]);
     } catch (error) {
+      if (error instanceof Error && error.message === 'AbortError') {
+        return;
+      }
       setMessages(prev => [...prev, { role: 'assistant', content: 'I encountered a cognitive disruption. Please try again.' }]);
     } finally {
       setLoading(false);

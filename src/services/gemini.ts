@@ -46,7 +46,7 @@ const getModelStrengths = (model: ModelType) => {
   }
 };
 
-export async function auditIntent(intent: UserIntent): Promise<AuditResult> {
+export async function auditIntent(intent: UserIntent, signal?: AbortSignal): Promise<AuditResult> {
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: `Analyze this user intent for a prompt: "${intent.raw}". 
@@ -65,10 +65,11 @@ export async function auditIntent(intent: UserIntent): Promise<AuditResult> {
     },
   });
 
+  if (signal?.aborted) throw new Error('AbortError');
   return JSON.parse(response.text);
 }
 
-export async function stressTest(intent: UserIntent, audit: AuditResult): Promise<StressTestResult> {
+export async function stressTest(intent: UserIntent, audit: AuditResult, signal?: AbortSignal): Promise<StressTestResult> {
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: `Stress-test this intent: "${intent.raw}" based on these audit findings: ${JSON.stringify(audit)}.
@@ -87,13 +88,15 @@ export async function stressTest(intent: UserIntent, audit: AuditResult): Promis
     },
   });
 
+  if (signal?.aborted) throw new Error('AbortError');
   return JSON.parse(response.text);
 }
 
 export async function generateInstructionSet(
   intent: UserIntent, 
   stress: StressTestResult, 
-  memory: MemoryState[] = []
+  memory: MemoryState[] = [],
+  signal?: AbortSignal
 ): Promise<InstructionSet> {
   const modelStrengths = getModelStrengths(intent.targetModel);
   const memoryContext = memory.length > 0 ? `\nPersistent Memory Context: ${JSON.stringify(memory)}` : "";
@@ -135,10 +138,11 @@ export async function generateInstructionSet(
     },
   });
 
+  if (signal?.aborted) throw new Error('AbortError');
   return JSON.parse(response.text);
 }
 
-export async function getRetrospective(failedStep: string): Promise<Retrospective> {
+export async function getRetrospective(failedStep: string, signal?: AbortSignal): Promise<Retrospective> {
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: `Analyze this failed step log: "${failedStep}". 
@@ -156,10 +160,11 @@ export async function getRetrospective(failedStep: string): Promise<Retrospectiv
     },
   });
 
+  if (signal?.aborted) throw new Error('AbortError');
   return JSON.parse(response.text);
 }
 
-export async function chatWithExpert(message: string, context: any): Promise<string> {
+export async function chatWithExpert(message: string, context: any, signal?: AbortSignal): Promise<string> {
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: `You are the Meta-Prompt Knowledge Expert. Your goal is to help users master high-dimensional prompt engineering and the Meta-Prompt Architect app.
@@ -171,10 +176,11 @@ export async function chatWithExpert(message: string, context: any): Promise<str
     Provide a concise, high-authority response. If the user is asking about a feature, explain it in the context of cognitive governance. If they are asking about their current prompt, offer specific architectural advice.`,
   });
 
+  if (signal?.aborted) throw new Error('AbortError');
   return response.text;
 }
 
-export async function redTeamAudit(instructionSet: InstructionSet): Promise<{ score: number; reasoning: string; vulnerabilities: string[] }> {
+export async function redTeamAudit(instructionSet: InstructionSet, signal?: AbortSignal): Promise<{ score: number; reasoning: string; vulnerabilities: string[] }> {
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: `You are a Senior Security Auditor. Perform an adversarial red-team audit on this generated instruction set:
@@ -197,5 +203,6 @@ export async function redTeamAudit(instructionSet: InstructionSet): Promise<{ sc
     },
   });
 
+  if (signal?.aborted) throw new Error('AbortError');
   return JSON.parse(response.text);
 }

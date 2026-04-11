@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export enum ModelType {
   GPT_5_PRO = "gpt-5.4-pro",
   GPT_5_THINKING = "gpt-5.3-thinking",
@@ -25,63 +27,70 @@ export enum ThemeType {
   HIGH_CONTRAST = "high-contrast"
 }
 
+export const UserIntentSchema = z.object({
+  raw: z.string(),
+  targetModel: z.nativeEnum(ModelType),
+  useLCI: z.boolean(),
+  lciConfig: z.object({
+    contextWindow: z.number(),
+    compressionRatio: z.number(),
+  }),
+  highRisk: z.boolean(),
+  theme: z.nativeEnum(ThemeType),
+});
+
+export const AuditResultSchema = z.object({
+  assumptions: z.array(z.string()),
+  edgeCases: z.array(z.string()),
+  truthSurface: z.array(z.string()),
+});
+
+export const StressTestResultSchema = z.object({
+  criticArgument: z.string(),
+  logicOptimization: z.string(),
+  resolution: z.string(),
+});
+
+export const InstructionSetSchema = z.object({
+  systemRole: z.string(),
+  cognitiveStack: z.array(z.string()),
+  verificationGates: z.array(z.string()),
+  handoffArtifacts: z.array(z.string()),
+  verbalizedSampling: z.string().optional(),
+  finalPrompt: z.string(),
+});
+
+export const HistoryItemSchema = z.object({
+  id: z.string(),
+  timestamp: z.string(),
+  intent: UserIntentSchema,
+  results: z.object({
+    audit: AuditResultSchema,
+    stress: StressTestResultSchema,
+    instructionSet: InstructionSetSchema,
+  }),
+});
+
+export const MemoryStateSchema = z.object({
+  key: z.string(),
+  value: z.string(),
+  lastUpdated: z.string(),
+});
+
+export type UserIntent = z.infer<typeof UserIntentSchema>;
+export type AuditResult = z.infer<typeof AuditResultSchema>;
+export type StressTestResult = z.infer<typeof StressTestResultSchema>;
+export type InstructionSet = z.infer<typeof InstructionSetSchema>;
+export type HistoryItem = z.infer<typeof HistoryItemSchema>;
+export type MemoryState = z.infer<typeof MemoryStateSchema>;
+
 export interface PIIFinding {
   type: string;
   value: string;
   index: number;
 }
 
-export interface HistoryItem {
-  id: string;
-  timestamp: string;
-  intent: UserIntent;
-  results: {
-    audit: AuditResult;
-    stress: StressTestResult;
-    instructionSet: InstructionSet;
-  };
-}
-
-export interface UserIntent {
-  raw: string;
-  targetModel: ModelType;
-  useLCI: boolean;
-  lciConfig: {
-    contextWindow: number;
-    compressionRatio: number;
-  };
-  highRisk: boolean;
-  theme: ThemeType;
-}
-
-export interface AuditResult {
-  assumptions: string[];
-  edgeCases: string[];
-  truthSurface: string[];
-}
-
-export interface StressTestResult {
-  criticArgument: string;
-  logicOptimization: string;
-  resolution: string;
-}
-
-export interface InstructionSet {
-  systemRole: string;
-  cognitiveStack: string[];
-  verificationGates: string[];
-  handoffArtifacts: string[];
-  verbalizedSampling?: string;
-  finalPrompt: string;
-}
-
 export interface Retrospective {
   failureReason: string;
   suggestedUpdate: string;
-}
-
-export interface MemoryState {
-  key: string;
-  value: string;
-  lastUpdated: string;
 }
