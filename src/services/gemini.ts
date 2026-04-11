@@ -112,6 +112,8 @@ export async function generateInstructionSet(
     
     POLICY ALIGNMENT: Ensure the prompt adheres to safety, neutrality, and ethical guidelines. Flag any potential violations in the cognitive stack.
     
+    COGNITIVE STACK INSTRUCTIONS: Define the specific cognitive modes the AI should use. If the target model or intent implies an agentic IDE like Claude Code, explicitly utilize its known cognitive modes (e.g., "Architect Mode" for planning, "Code Mode" for execution, "Ask Mode" for clarification). Otherwise, use standard modes (e.g., Analytical, Synthetic, Forensic).
+    
     Include System Role, Cognitive Stack, Verification Gates, Handoff Artifacts, Verbalized Sampling explanation, and the Final Prompt.
     
     CRITICAL: The 'finalPrompt' MUST start with a 'BOOTSTRAP_COMMAND' section that tells the user exactly what to type first in their target AI session. 

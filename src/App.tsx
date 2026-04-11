@@ -4,7 +4,7 @@ import { UserIntent, AuditResult, StressTestResult, InstructionSet, ModelType, M
 import KnowledgeExpert from './components/KnowledgeExpert';
 import { auditIntent, stressTest, generateInstructionSet, getRetrospective, scanForPII, redTeamAudit } from './services/gemini';
 import { estimateCost } from './services/tokenEstimator';
-import { Terminal, Cpu, ShieldAlert, Zap, Save, RefreshCw, AlertCircle, BookOpen, Layers, CheckCircle2, FileCode, Printer, Eye, HelpCircle, History, Download, Sun, Moon, Monitor, Info, FileText, Sparkles, GitBranch, DollarSign } from 'lucide-react';
+import { Terminal, Cpu, ShieldAlert, Zap, Save, RefreshCw, AlertCircle, BookOpen, Layers, CheckCircle2, FileCode, Printer, Eye, HelpCircle, History, Download, Sun, Moon, Monitor, Info, FileText, Sparkles, GitBranch, DollarSign, Copy, FileJson } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { generateCursorRules } from './services/ideHandoff';
 import Manual from './components/Manual';
@@ -156,10 +156,38 @@ export default function App() {
     a.click();
   };
 
+  const handleBoxExport = (title: string, data: any, format: 'json' | 'md') => {
+    let content = '';
+    if (format === 'json') {
+      content = JSON.stringify(data, null, 2);
+    } else {
+      content = `# ${title}\n\n${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}`;
+    }
+    const blob = new Blob([content], { type: format === 'json' ? 'application/json' : 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}.${format}`;
+    a.click();
+  };
+
+  const handleBoxCopy = (data: any) => {
+    const content = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    navigator.clipboard.writeText(content);
+  };
+
   const getCognitiveLoad = () => {
     if (!instructionSet) return 0;
     const complexity = (instructionSet.cognitiveStack.length * 10) + (instructionSet.verificationGates.length * 5);
     return Math.min(100, complexity);
+  };
+
+  const getCognitiveLoadMessage = () => {
+    const load = getCognitiveLoad();
+    if (load > 80) return 'CRITICAL: Instruction set may exceed model reasoning capacity. Consider mitigation.';
+    if (load > 60) return `HIGH: High cognitive density detected (${instructionSet?.cognitiveStack.length} stack items, ${instructionSet?.verificationGates.length} gates). Monitor for reasoning smear.`;
+    if (load > 40) return `MODERATE: Balanced cognitive load. Model should execute instructions reliably.`;
+    return 'OPTIMAL: Low cognitive density. Execution precision will be extremely high.';
   };
 
   const downloadPDF = () => {
@@ -606,7 +634,7 @@ export default function App() {
                     />
                   </div>
                   <p className="text-[9px] text-[#444] mt-2">
-                    {getCognitiveLoad() > 80 ? 'CRITICAL: Instruction set may exceed model reasoning capacity.' : 'OPTIMAL: Cognitive density within recommended thresholds.'}
+                    {getCognitiveLoadMessage()}
                   </p>
 
                   {getCognitiveLoad() > 80 && (
@@ -744,10 +772,23 @@ export default function App() {
 
                         <div className="pt-6 border-t border-[#1a1a1a]">
                           <div className="flex justify-between items-center mb-3">
-                            <span className="text-[9px] text-[#666] uppercase block">Instruction Set Payload</span>
-                            <div className="flex items-center gap-2 bg-[#002200] border border-[#004400] px-2 py-1 rounded-sm">
-                              <Info size={10} className="text-[#00ff00]" />
-                              <span className="text-[8px] text-[#00ff00] uppercase font-bold">Usage: Copy and paste into a fresh AI session</span>
+                            <div className="flex items-center gap-4">
+                              <span className="text-[9px] text-[#666] uppercase block">Instruction Set Payload</span>
+                              <div className="flex items-center gap-2 bg-[#002200] border border-[#004400] px-2 py-1 rounded-sm">
+                                <Info size={10} className="text-[#00ff00]" />
+                                <span className="text-[8px] text-[#00ff00] uppercase font-bold">Usage: Copy and paste into a fresh AI session</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => handleBoxCopy(instructionSet.finalPrompt)} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Copy to clipboard">
+                                <Copy size={12} /> COPY
+                              </button>
+                              <button onClick={() => handleBoxExport('Instruction Set Payload', instructionSet.finalPrompt, 'json')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download JSON">
+                                <FileJson size={12} /> JSON
+                              </button>
+                              <button onClick={() => handleBoxExport('Instruction Set Payload', instructionSet.finalPrompt, 'md')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download Markdown">
+                                <FileText size={12} /> MD
+                              </button>
                             </div>
                           </div>
                           <pre className="bg-[#050505] p-4 text-[11px] text-[#aaa] leading-relaxed whitespace-pre-wrap border border-[#1a1a1a] max-h-96 overflow-y-auto custom-scrollbar font-mono">
