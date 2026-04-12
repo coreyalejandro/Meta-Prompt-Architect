@@ -5,12 +5,14 @@ import { UserIntent, AuditResult, StressTestResult, InstructionSet, ModelType, M
 import KnowledgeExpert from './components/KnowledgeExpert';
 import { auditIntent, stressTest, generateInstructionSet, getRetrospective, scanForPII, redTeamAudit } from './services/gemini';
 import { estimateCost } from './services/tokenEstimator';
-import { Terminal, Cpu, ShieldAlert, Zap, Save, RefreshCw, AlertCircle, BookOpen, Layers, CheckCircle2, FileCode, Printer, Eye, HelpCircle, History, Download, Sun, Moon, Monitor, Info, FileText, Sparkles, GitBranch, DollarSign, Copy, FileJson } from 'lucide-react';
+import { Terminal, Cpu, ShieldAlert, Zap, Save, RefreshCw, AlertCircle, BookOpen, Layers, CheckCircle2, FileCode, Printer, Eye, HelpCircle, History, Download, Sun, Moon, Monitor, Info, FileText, Sparkles, GitBranch, DollarSign, Copy, FileJson, Search } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { generateCursorRules } from './services/ideHandoff';
 import Manual from './components/Manual';
 import AuditView from './components/AuditView';
+import WorkflowBuilder from './components/WorkflowBuilder';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { storage } from './utils/storage';
 
 export default function App() {
   const [intent, setIntent] = useState<UserIntent>({
@@ -29,47 +31,38 @@ export default function App() {
   const [instructionSet, setInstructionSet] = useState<InstructionSet | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [memory, setMemory] = useState<MemoryState[]>(() => {
-    try {
-      const saved = localStorage.getItem('architect_memory');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return z.array(MemoryStateSchema).parse(parsed);
-      }
-    } catch (e) {
-      console.error('Failed to parse memory from localStorage', e);
-    }
-    return [];
-  });
+  const [memory, setMemory] = useState<MemoryState[]>([]);
   const [failedStep, setFailedStep] = useState('');
   const [retrospective, setRetrospective] = useState<Retrospective | null>(null);
   const [isManualOpen, setIsManualOpen] = useState(true);
-  const [history, setHistory] = useState<HistoryItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('architect_history');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return z.array(HistoryItemSchema).parse(parsed);
-      }
-    } catch (e) {
-      console.error('Failed to parse history from localStorage', e);
-    }
-    return [];
-  });
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   const [piiFindings, setPiiFindings] = useState<PIIFinding[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [redTeamResults, setRedTeamResults] = useState<{ score: number; reasoning: string; vulnerabilities: string[] } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'prompt' | 'sampling' | 'audit' | 'docs' | 'history'>('prompt');
+  const [activeTab, setActiveTab] = useState<'prompt' | 'sampling' | 'audit' | 'docs' | 'history' | 'workflow'>('prompt');
   const [showDocs, setShowDocs] = useState(false);
+  const [historySearchTerm, setHistorySearchTerm] = useState('');
+  const [historyFilterDate, setHistoryFilterDate] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    localStorage.setItem('architect_history', JSON.stringify(history));
+    const initStorage = async () => {
+      await storage.migrateFromLocalStorage();
+      const loadedHistory = await storage.getHistory();
+      const loadedMemory = await storage.getMemory();
+      setHistory(loadedHistory);
+      setMemory(loadedMemory);
+    };
+    initStorage();
+  }, []);
+
+  useEffect(() => {
+    storage.saveHistory(history);
   }, [history]);
 
   useEffect(() => {
-    localStorage.setItem('architect_memory', JSON.stringify(memory));
+    storage.saveMemory(memory);
   }, [memory]);
 
   useEffect(() => {
@@ -79,6 +72,42 @@ export default function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd/Ctrl + Enter to generate
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (activeTab === 'workflow') {
+          // Trigger workflow run if we had a ref or global state, but for now just handle prompt generation
+          handleGenerate();
+        } else {
+          handleGenerate();
+        }
+      }
+      
+      // Cmd/Ctrl + / to toggle manual
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault();
+        setIsManualOpen(prev => !prev);
+      }
+
+      // Cmd/Ctrl + H to toggle history
+      if ((e.metaKey || e.ctrlKey) && e.key === 'h') {
+        e.preventDefault();
+        setShowHistory(prev => !prev);
+      }
+
+      // Esc to close modals
+      if (e.key === 'Escape') {
+        setIsManualOpen(false);
+        setShowHistory(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [intent.raw, activeTab]);
 
   const handleReset = () => {
     if (abortControllerRef.current) {
@@ -820,6 +849,12 @@ ${instructionSet.finalPrompt}
                       >
                         <History size={12} /> Version_Control
                       </button>
+                      <button 
+                        onClick={() => setActiveTab('workflow')}
+                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors ${activeTab === 'workflow' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                      >
+                        <GitBranch size={12} /> Workflow
+                      </button>
                     </div>
                     <div className="flex items-center gap-2 pr-2">
                       <button 
@@ -1110,11 +1145,41 @@ ${instructionSet.finalPrompt}
                             <GitBranch className="text-[#00ff00]" size={20} />
                             <h2 className="text-sm font-bold uppercase tracking-widest">Git-for-Prompts: Version Control</h2>
                           </div>
+                          <div className="flex items-center gap-2">
+                            <div className="relative">
+                              <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-[#666]" size={12} />
+                              <input 
+                                type="text"
+                                placeholder="Search intent..."
+                                value={historySearchTerm}
+                                onChange={(e) => setHistorySearchTerm(e.target.value)}
+                                className="bg-[#050505] border border-[#1a1a1a] pl-6 pr-2 py-1 text-[10px] text-[#e0e0e0] outline-none focus:border-[#00ff00] w-40"
+                              />
+                            </div>
+                            <input 
+                              type="date"
+                              value={historyFilterDate}
+                              onChange={(e) => setHistoryFilterDate(e.target.value)}
+                              className="bg-[#050505] border border-[#1a1a1a] px-2 py-1 text-[10px] text-[#e0e0e0] outline-none focus:border-[#00ff00]"
+                            />
+                            {(historySearchTerm || historyFilterDate) && (
+                              <button 
+                                onClick={() => { setHistorySearchTerm(''); setHistoryFilterDate(''); }}
+                                className="text-[9px] text-[#ff0000] hover:text-[#cc0000] uppercase font-bold ml-2"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
                         </div>
                         
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                           <div className="md:col-span-1 space-y-2 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                            {history.map((item, i) => (
+                            {history.filter(item => {
+                              const matchesSearch = item.intent.raw.toLowerCase().includes(historySearchTerm.toLowerCase());
+                              const matchesDate = historyFilterDate ? item.timestamp.startsWith(historyFilterDate) : true;
+                              return matchesSearch && matchesDate;
+                            }).map((item, i) => (
                               <div 
                                 key={item.id} 
                                 className="bg-[#050505] border border-[#1a1a1a] p-3 rounded-sm hover:border-[#00ff00] cursor-pointer transition-colors"
@@ -1143,6 +1208,16 @@ ${instructionSet.finalPrompt}
                             </div>
                           </div>
                         </div>
+                      </motion.div>
+                    )}
+                    {activeTab === 'workflow' && (
+                      <motion.div 
+                        key="workflow"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                      >
+                        <WorkflowBuilder />
                       </motion.div>
                     )}
                   </div>

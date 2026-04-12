@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { UserIntent, AuditResult, StressTestResult, InstructionSet, ModelType, Retrospective, PIIFinding, MemoryState } from "../types";
+import { UserIntent, AuditResult, StressTestResult, InstructionSet, ModelType, Retrospective, PIIFinding, MemoryState, AuditResultSchema, StressTestResultSchema, InstructionSetSchema } from "../types";
+import { z } from 'zod';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -66,7 +67,7 @@ export async function auditIntent(intent: UserIntent, signal?: AbortSignal): Pro
   });
 
   if (signal?.aborted) throw new Error('AbortError');
-  return JSON.parse(response.text);
+  return AuditResultSchema.parse(JSON.parse(response.text));
 }
 
 export async function stressTest(intent: UserIntent, audit: AuditResult, signal?: AbortSignal): Promise<StressTestResult> {
@@ -89,7 +90,7 @@ export async function stressTest(intent: UserIntent, audit: AuditResult, signal?
   });
 
   if (signal?.aborted) throw new Error('AbortError');
-  return JSON.parse(response.text);
+  return StressTestResultSchema.parse(JSON.parse(response.text));
 }
 
 export async function generateInstructionSet(
@@ -108,12 +109,14 @@ export async function generateInstructionSet(
     Model-Specific Optimization: ${modelStrengths}
     Use LCI: ${intent.useLCI}. 
     LCI Configuration: Context Window=${intent.lciConfig.contextWindow} tokens, Compression Ratio=${intent.lciConfig.compressionRatio}:1.
-    High Risk: ${intent.highRisk}.${memoryContext}
+    High Risk: ${intent.highRisk}.
+    Compliance Mode: ${intent.compliance || 'none'}.${memoryContext}
     
     CRITICAL: Use "Advanced Verbalized Sampling". Before finalizing the prompt, perform an internal evaluation of 3 different prompt architectures (e.g., Chain-of-Thought, Few-Shot, Role-Based). 
     Select the most robust one and explain WHY in the 'verbalizedSampling' field.
     
     POLICY ALIGNMENT: Ensure the prompt adheres to safety, neutrality, and ethical guidelines. Flag any potential violations in the cognitive stack.
+    If Compliance Mode is not 'none', ensure the prompt explicitly includes instructions to adhere to the specified regulatory framework (${intent.compliance}).
     
     COGNITIVE STACK INSTRUCTIONS: Define the specific cognitive modes the AI should use. If the target model or intent implies an agentic IDE like Claude Code, explicitly utilize its known cognitive modes (e.g., "Architect Mode" for planning, "Code Mode" for execution, "Ask Mode" for clarification). Otherwise, use standard modes (e.g., Analytical, Synthetic, Forensic).
     
@@ -139,8 +142,13 @@ export async function generateInstructionSet(
   });
 
   if (signal?.aborted) throw new Error('AbortError');
-  return JSON.parse(response.text);
+  return InstructionSetSchema.parse(JSON.parse(response.text));
 }
+
+const RetrospectiveSchema = z.object({
+  failureReason: z.string(),
+  suggestedUpdate: z.string(),
+});
 
 export async function getRetrospective(failedStep: string, signal?: AbortSignal): Promise<Retrospective> {
   const response = await ai.models.generateContent({
@@ -161,8 +169,14 @@ export async function getRetrospective(failedStep: string, signal?: AbortSignal)
   });
 
   if (signal?.aborted) throw new Error('AbortError');
-  return JSON.parse(response.text);
+  return RetrospectiveSchema.parse(JSON.parse(response.text));
 }
+
+const RedTeamSchema = z.object({
+  score: z.number(),
+  reasoning: z.string(),
+  vulnerabilities: z.array(z.string()),
+});
 
 export async function chatWithExpert(message: string, context: any, signal?: AbortSignal): Promise<string> {
   const response = await ai.models.generateContent({
@@ -204,5 +218,53 @@ export async function redTeamAudit(instructionSet: InstructionSet, signal?: Abor
   });
 
   if (signal?.aborted) throw new Error('AbortError');
-  return JSON.parse(response.text);
+  return RedTeamSchema.parse(JSON.parse(response.text));
+}
+
+const WorkflowGenerationSchema = z.object({
+  steps: z.array(z.object({
+    name: z.string(),
+    intent: z.string(),
+    targetModel: z.nativeEnum(ModelType),
+    dependsOnNames: z.array(z.string())
+  }))
+});
+
+export async function generateWorkflow(prompt: string, signal?: AbortSignal) {
+  const response = await ai.models.generateContent({
+    model: "gemini-2.0-flash",
+    contents: `You are an expert AI workflow architect. Given the following user request, design a multi-step AI workflow.
+    Each step should have a name, a detailed intent (prompt), a target model, and an array of names of the steps it depends on.
+    
+    User Request: "${prompt}"
+    
+    Available Models: ${Object.values(ModelType).join(", ")}
+    
+    Design the workflow to be efficient, breaking down complex tasks into logical, sequential, or parallel steps.`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          steps: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                intent: { type: Type.STRING },
+                targetModel: { type: Type.STRING },
+                dependsOnNames: { type: Type.ARRAY, items: { type: Type.STRING } }
+              },
+              required: ["name", "intent", "targetModel", "dependsOnNames"]
+            }
+          }
+        },
+        required: ["steps"],
+      },
+    },
+  });
+
+  if (signal?.aborted) throw new Error('AbortError');
+  return WorkflowGenerationSchema.parse(JSON.parse(response.text));
 }

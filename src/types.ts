@@ -37,6 +37,7 @@ export const UserIntentSchema = z.object({
   }),
   highRisk: z.boolean(),
   theme: z.nativeEnum(ThemeType),
+  compliance: z.string().optional(),
 });
 
 export const AuditResultSchema = z.object({
@@ -83,6 +84,28 @@ export type StressTestResult = z.infer<typeof StressTestResultSchema>;
 export type InstructionSet = z.infer<typeof InstructionSetSchema>;
 export type HistoryItem = z.infer<typeof HistoryItemSchema>;
 export type MemoryState = z.infer<typeof MemoryStateSchema>;
+
+export const WORMAuditLogSchema = z.object({
+  id: z.string(),
+  timestamp: z.string(),
+  action: z.enum(['GENERATE', 'EXPORT_JSON', 'EXPORT_MD', 'EXPORT_CURSOR', 'REDACT_PII']),
+  userId: z.string(), // Simulated user ID
+  details: z.any(),
+  hash: z.string() // Simulated cryptographic hash of the record to ensure immutability
+});
+
+export type WORMAuditLog = z.infer<typeof WORMAuditLogSchema>;
+
+export interface WorkflowStep {
+  id: string;
+  name: string;
+  intent: string;
+  targetModel: ModelType;
+  dependsOn: string[];
+  status: 'idle' | 'running' | 'completed' | 'failed';
+  result?: InstructionSet;
+  error?: string;
+}
 
 export interface PIIFinding {
   type: string;
