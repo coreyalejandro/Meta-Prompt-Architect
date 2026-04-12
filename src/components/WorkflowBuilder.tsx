@@ -194,40 +194,40 @@ export default function WorkflowBuilder() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between bg-[#0f0f0f] border border-[#1a1a1a] p-4 rounded-sm">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-[#0f0f0f] border border-[#1a1a1a] p-4 rounded-sm gap-4">
         <div className="flex items-center gap-3 text-[#0088ff]">
-          <GitMerge size={24} />
+          <GitMerge size={24} className="flex-shrink-0" />
           <div>
             <h2 className="text-sm font-bold uppercase tracking-widest">Workflow Builder</h2>
             <p className="text-[10px] text-[#666]">Chain prompts and define dependencies for complex generation pipelines.</p>
           </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3 w-full sm:w-auto">
           <button 
             onClick={() => setShowTemplates(true)}
             disabled={isRunning}
-            className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] text-[#e0e0e0] text-xs font-bold uppercase hover:bg-[#222] transition-colors disabled:opacity-50"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-[#1a1a1a] text-[#e0e0e0] text-xs font-bold uppercase hover:bg-[#222] transition-colors disabled:opacity-50 whitespace-nowrap"
           >
             <LayoutTemplate size={14} /> Templates
           </button>
           <button 
             onClick={() => setShowAutoBuilder(true)}
             disabled={isRunning}
-            className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] text-[#e0e0e0] text-xs font-bold uppercase hover:bg-[#222] transition-colors disabled:opacity-50"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-[#1a1a1a] text-[#e0e0e0] text-xs font-bold uppercase hover:bg-[#222] transition-colors disabled:opacity-50 whitespace-nowrap"
           >
             <Wand2 size={14} /> Auto-Generate
           </button>
           <button 
             onClick={addStep}
             disabled={isRunning}
-            className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] text-[#e0e0e0] text-xs font-bold uppercase hover:bg-[#222] transition-colors disabled:opacity-50"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-[#1a1a1a] text-[#e0e0e0] text-xs font-bold uppercase hover:bg-[#222] transition-colors disabled:opacity-50 whitespace-nowrap"
           >
             <Plus size={14} /> Add Step
           </button>
           <button 
             onClick={executeWorkflow}
             disabled={isRunning || steps.length === 0}
-            className="flex items-center gap-2 px-6 py-2 bg-[#0088ff] text-[#000] text-xs font-bold uppercase hover:bg-[#0066cc] transition-colors disabled:opacity-50"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2 bg-[#0088ff] text-[#000] text-xs font-bold uppercase hover:bg-[#0066cc] transition-colors disabled:opacity-50 whitespace-nowrap"
           >
             {isRunning ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
             {isRunning ? 'Executing...' : 'Run Workflow'}

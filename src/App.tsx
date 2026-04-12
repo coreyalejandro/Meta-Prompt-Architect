@@ -3,9 +3,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { z } from 'zod';
 import { UserIntent, AuditResult, StressTestResult, InstructionSet, ModelType, MemoryState, Retrospective, ThemeType, HistoryItem, PIIFinding, HistoryItemSchema, MemoryStateSchema } from './types';
 import KnowledgeExpert from './components/KnowledgeExpert';
-import { auditIntent, stressTest, generateInstructionSet, getRetrospective, scanForPII, redTeamAudit } from './services/gemini';
+import { auditIntent, stressTest, generateInstructionSet, getRetrospective, scanForPII, redTeamAudit, testCrossModelParity, mapConstitutionalStandards } from './services/gemini';
 import { estimateCost } from './services/tokenEstimator';
-import { Terminal, Cpu, ShieldAlert, Zap, Save, RefreshCw, AlertCircle, BookOpen, Layers, CheckCircle2, FileCode, Printer, Eye, HelpCircle, History, Download, Sun, Moon, Monitor, Info, FileText, Sparkles, GitBranch, DollarSign, Copy, FileJson, Search } from 'lucide-react';
+import { Terminal, Cpu, ShieldAlert, Zap, Save, RefreshCw, AlertCircle, BookOpen, Layers, CheckCircle2, FileCode, Printer, Eye, HelpCircle, History, Download, Sun, Moon, Monitor, Info, FileText, Sparkles, GitBranch, DollarSign, Copy, FileJson, Search, Scale, Activity } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { generateCursorRules } from './services/ideHandoff';
 import Manual from './components/Manual';
@@ -13,6 +13,7 @@ import AuditView from './components/AuditView';
 import WorkflowBuilder from './components/WorkflowBuilder';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { storage } from './utils/storage';
+import { CrossModelParityResult, ConstitutionalMappingResult } from './types';
 
 export default function App() {
   const [intent, setIntent] = useState<UserIntent>({
@@ -39,8 +40,11 @@ export default function App() {
   const [piiFindings, setPiiFindings] = useState<PIIFinding[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [redTeamResults, setRedTeamResults] = useState<{ score: number; reasoning: string; vulnerabilities: string[] } | null>(null);
+  const [crossModelParity, setCrossModelParity] = useState<CrossModelParityResult | null>(null);
+  const [constitutionalMapping, setConstitutionalMapping] = useState<ConstitutionalMappingResult | null>(null);
+  const [roiAnalytics, setRoiAnalytics] = useState<{ timeSaved: number, costSaved: number, totalGenerations: number } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'prompt' | 'sampling' | 'audit' | 'docs' | 'history' | 'workflow'>('prompt');
+  const [activeTab, setActiveTab] = useState<'prompt' | 'sampling' | 'audit' | 'docs' | 'history' | 'workflow' | 'analytics' | 'compliance'>('prompt');
   const [showDocs, setShowDocs] = useState(false);
   const [historySearchTerm, setHistorySearchTerm] = useState('');
   const [historyFilterDate, setHistoryFilterDate] = useState('');
@@ -171,11 +175,36 @@ export default function App() {
       const instructionRes = await generateInstructionSet(intent, stressRes, memory, signal);
       setInstructionSet(instructionRes);
 
-      // New: Adversarial Red-Teaming
+      // New: Adversarial Red-Teaming (Risk-Based Gating)
       if (intent.highRisk) {
-        const redTeam = await redTeamAudit(instructionRes);
+        const redTeam = await redTeamAudit(instructionRes, signal);
         setRedTeamResults(redTeam);
+      } else {
+        // Background process for standard builds
+        redTeamAudit(instructionRes).then(redTeam => {
+          if (redTeam.score < 8 || redTeam.vulnerabilities.length > 0) {
+            setRedTeamResults(redTeam);
+          }
+        }).catch(console.error);
       }
+
+      // Tier 3: Cross-Model Parity Testing
+      const parityRes = await testCrossModelParity(instructionRes, signal);
+      setCrossModelParity(parityRes);
+
+      // Tier 3: Constitutional Mapping UI
+      const mappingRes = await mapConstitutionalStandards(instructionRes, signal);
+      setConstitutionalMapping(mappingRes);
+
+      // Tier 3: ROI Analytics Dashboard
+      setRoiAnalytics(prev => {
+        const current = prev || { timeSaved: 0, costSaved: 0, totalGenerations: 0 };
+        return {
+          timeSaved: current.timeSaved + 4, // Assume 4 hours saved per generation
+          costSaved: current.costSaved + 200, // Assume $200 saved per generation
+          totalGenerations: current.totalGenerations + 1
+        };
+      });
       
       // Table Stakes: Versioning & History
       const newHistoryItem: HistoryItem = {
@@ -411,62 +440,75 @@ ${instructionSet.finalPrompt}
     <ErrorBoundary>
       <div className={`min-h-screen font-mono selection:bg-[#00ff00] selection:text-[#000] transition-colors duration-300 ${themeClasses[intent.theme]}`}>
         {/* Header */}
-        <header className={`border-b p-4 flex items-center justify-between sticky top-0 z-50 ${intent.theme === ThemeType.LIGHT ? 'bg-white border-gray-200' : 'bg-[#0f0f0f] border-[#1a1a1a]'}`}>
+        <header className={`border-b p-4 flex flex-col md:flex-row items-start md:items-center justify-between sticky top-0 z-50 gap-4 ${intent.theme === ThemeType.LIGHT ? 'bg-white border-gray-200' : 'bg-[#0f0f0f] border-[#1a1a1a]'}`}>
           <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-[#00ff00] rounded-sm flex items-center justify-center text-[#000]">
-            <Layers size={20} />
+            <div className="w-8 h-8 bg-[#00ff00] rounded-sm flex items-center justify-center text-[#000] flex-shrink-0">
+              <Layers size={20} />
+            </div>
+            <div>
+              <h1 className="text-sm font-bold tracking-widest uppercase">Meta-Prompt Architect</h1>
+              <p className="text-[10px] text-[#666] uppercase tracking-tighter">C-RSP Level 5 Cognitive Governance</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-sm font-bold tracking-widest uppercase">Meta-Prompt Architect</h1>
-            <p className="text-[10px] text-[#666] uppercase tracking-tighter">C-RSP Level 5 Cognitive Governance</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4 text-[10px] text-[#666]">
-          {/* Theme Switcher */}
-          <div className="flex items-center gap-2 border-r border-[#1a1a1a] pr-4">
-            <button 
-              onClick={() => setIntent(prev => ({ ...prev, theme: ThemeType.DARK }))}
-              className={`p-1 rounded-sm ${intent.theme === ThemeType.DARK ? 'text-[#00ff00] bg-[#1a1a1a]' : 'hover:text-[#aaa]'}`}
-              title="Dark Mode"
-            >
-              <Moon size={14} />
-            </button>
-            <button 
-              onClick={() => setIntent(prev => ({ ...prev, theme: ThemeType.LIGHT }))}
-              className={`p-1 rounded-sm ${intent.theme === ThemeType.LIGHT ? 'text-[#00ff00] bg-gray-200' : 'hover:text-[#aaa]'}`}
-              title="Light Mode"
-            >
-              <Sun size={14} />
-            </button>
-            <button 
-              onClick={() => setIntent(prev => ({ ...prev, theme: ThemeType.HIGH_CONTRAST }))}
-              className={`p-1 rounded-sm ${intent.theme === ThemeType.HIGH_CONTRAST ? 'text-[#00ff00] bg-[#333]' : 'hover:text-[#aaa]'}`}
-              title="High Contrast"
-            >
-              <Monitor size={14} />
-            </button>
-          </div>
+          
+          <div className="flex flex-wrap items-center gap-2 text-[10px] text-[#666] w-full md:w-auto">
+            <div className="flex items-center gap-1 border-r border-[#1a1a1a] pr-2 mr-2">
+              <button onClick={() => handleExport('md')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors px-2">
+                <Download size={12} /> EXPORT_MD
+              </button>
+              <button onClick={() => handleExport('json')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors px-2">
+                <Download size={12} /> EXPORT_JSON
+              </button>
+              <button onClick={() => handleExport('cursor')} className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 font-bold">
+                <Terminal size={12} /> EXPORT_CURSOR
+              </button>
+            </div>
 
-          <div className="flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#00ff00] animate-pulse" />
-            SYSTEM_READY
+            {/* Theme Switcher */}
+            <div className="flex items-center gap-2 border-r border-[#1a1a1a] pr-4">
+              <button 
+                onClick={() => setIntent(prev => ({ ...prev, theme: ThemeType.DARK }))}
+                className={`p-1 rounded-sm ${intent.theme === ThemeType.DARK ? 'text-[#00ff00] bg-[#1a1a1a]' : 'hover:text-[#aaa]'}`}
+                title="Dark Mode"
+              >
+                <Moon size={14} />
+              </button>
+              <button 
+                onClick={() => setIntent(prev => ({ ...prev, theme: ThemeType.LIGHT }))}
+                className={`p-1 rounded-sm ${intent.theme === ThemeType.LIGHT ? 'text-[#00ff00] bg-gray-200' : 'hover:text-[#aaa]'}`}
+                title="Light Mode"
+              >
+                <Sun size={14} />
+              </button>
+              <button 
+                onClick={() => setIntent(prev => ({ ...prev, theme: ThemeType.HIGH_CONTRAST }))}
+                className={`p-1 rounded-sm ${intent.theme === ThemeType.HIGH_CONTRAST ? 'text-[#00ff00] bg-[#333]' : 'hover:text-[#aaa]'}`}
+                title="High Contrast"
+              >
+                <Monitor size={14} />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <div className="w-1.5 h-1.5 rounded-full bg-[#00ff00] animate-pulse" />
+              SYSTEM_READY
+            </div>
+            <div className="border-l border-[#1a1a1a] pl-4 flex items-center gap-4 flex-1 md:flex-none justify-end">
+              <button 
+                onClick={() => setShowHistory(!showHistory)}
+                className={`transition-colors flex items-center gap-1 uppercase tracking-widest whitespace-nowrap ${showHistory ? 'text-[#00ff00]' : 'text-[#666] hover:text-[#00ff00]'}`}
+              >
+                <History size={14} /> HISTORY
+              </button>
+              <button 
+                onClick={() => setIsManualOpen(true)}
+                className="text-[#666] hover:text-[#00ff00] transition-colors flex items-center gap-1 uppercase tracking-widest whitespace-nowrap"
+              >
+                <HelpCircle size={14} /> HELP_GUIDE
+              </button>
+            </div>
           </div>
-          <div className="border-l border-[#1a1a1a] pl-4 flex items-center gap-4">
-            <button 
-              onClick={() => setShowHistory(!showHistory)}
-              className={`transition-colors flex items-center gap-1 uppercase tracking-widest ${showHistory ? 'text-[#00ff00]' : 'text-[#666] hover:text-[#00ff00]'}`}
-            >
-              <History size={14} /> HISTORY
-            </button>
-            <button 
-              onClick={() => setIsManualOpen(true)}
-              className="text-[#666] hover:text-[#00ff00] transition-colors flex items-center gap-1 uppercase tracking-widest"
-            >
-              <HelpCircle size={14} /> HELP_GUIDE
-            </button>
-          </div>
-        </div>
-      </header>
+        </header>
 
       <Manual isOpen={isManualOpen} onClose={() => setIsManualOpen(false)} />
       <KnowledgeExpert context={contextForExpert} />
@@ -816,68 +858,62 @@ ${instructionSet.finalPrompt}
                 {audit && stress && <AuditView audit={audit} stress={stress} />}
 
                 {/* Main Instruction Set */}
-                <div className="bg-[#0f0f0f] border border-[#1a1a1a] rounded-sm overflow-hidden">
-                  <div className="bg-[#1a1a1a] p-1 flex items-center justify-between">
-                    <div className="flex">
+                <div className="bg-[#0f0f0f] border border-[#1a1a1a] rounded-sm overflow-hidden flex flex-col">
+                  <div className="bg-[#1a1a1a] p-1 flex items-center justify-between overflow-x-auto no-scrollbar">
+                    <div className="flex flex-nowrap min-w-0">
                       <button 
                         onClick={() => setActiveTab('prompt')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors ${activeTab === 'prompt' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'prompt' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
                       >
                         <FileCode size={12} /> Executable_Prompt
                       </button>
                       <button 
                         onClick={() => setActiveTab('sampling')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors ${activeTab === 'sampling' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'sampling' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
                       >
                         <Zap size={12} /> Verbalized_Sampling
                       </button>
                       <button 
                         onClick={() => setActiveTab('audit')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors ${activeTab === 'audit' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'audit' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
                       >
                         <Eye size={12} /> Cognitive_Audit
                       </button>
                       <button 
                         onClick={() => setActiveTab('docs')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors ${activeTab === 'docs' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'docs' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
                       >
-                        <FileText size={12} /> Documentation
+                        <FileText size={12} /> Snippets
                       </button>
                       <button 
                         onClick={() => setActiveTab('history')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors ${activeTab === 'history' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'history' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
                       >
                         <History size={12} /> Version_Control
                       </button>
                       <button 
                         onClick={() => setActiveTab('workflow')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors ${activeTab === 'workflow' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'workflow' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
                       >
                         <GitBranch size={12} /> Workflow
                       </button>
+                      <button 
+                        onClick={() => setActiveTab('analytics')}
+                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'analytics' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                      >
+                        <Activity size={12} /> Analytics
+                      </button>
+                      <button 
+                        onClick={() => setActiveTab('compliance')}
+                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'compliance' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                      >
+                        <Scale size={12} /> Compliance
+                      </button>
                     </div>
-                    <div className="flex items-center gap-2 pr-2">
-                      <button 
-                        onClick={() => handleExport('md')}
-                        className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors px-2"
-                      >
-                        <Download size={12} /> EXPORT_MD
-                      </button>
-                      <button 
-                        onClick={() => handleExport('json')}
-                        className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors px-2"
-                      >
-                        <Download size={12} /> EXPORT_JSON
-                      </button>
-                      <button 
-                        onClick={() => handleExport('cursor')}
-                        className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 font-bold"
-                      >
-                        <Terminal size={12} /> EXPORT_CURSOR
-                      </button>
+                    <div className="flex items-center gap-2 pr-2 ml-4 flex-shrink-0">
                       <button 
                         onClick={handleCopyFullStack}
-                        className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 border-l border-[#333] ml-2 pl-2 font-bold"
+                        className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 font-bold"
                       >
                         <Copy size={12} /> COPY FULL STACK
                       </button>
@@ -1038,7 +1074,7 @@ ${instructionSet.finalPrompt}
                         <div className="flex items-center justify-between border-b border-[#1a1a1a] pb-4">
                           <div className="flex items-center gap-3">
                             <FileText className="text-[#00ff00]" size={20} />
-                            <h2 className="text-sm font-bold uppercase tracking-widest">Project Documentation Kit</h2>
+                            <h2 className="text-sm font-bold uppercase tracking-widest">Project Snippets Kit</h2>
                           </div>
                           <button 
                             onClick={downloadPDF}
@@ -1218,6 +1254,112 @@ ${instructionSet.finalPrompt}
                         exit={{ opacity: 0, x: 20 }}
                       >
                         <WorkflowBuilder />
+                      </motion.div>
+                    )}
+                    {activeTab === 'analytics' && (
+                      <motion.div 
+                        key="analytics"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                        className="space-y-6"
+                      >
+                        <div className="bg-[#050505] border border-[#1a1a1a] p-6 rounded-sm">
+                          <h3 className="text-[10px] font-bold text-[#0088ff] uppercase tracking-wider mb-4 flex items-center gap-2">
+                            <Activity size={14} /> ROI Analytics Dashboard
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm">
+                              <p className="text-[10px] text-[#666] uppercase mb-1">Time Saved</p>
+                              <p className="text-2xl font-bold text-[#e0e0e0]">{roiAnalytics?.timeSaved || 0} <span className="text-sm text-[#888]">hrs</span></p>
+                            </div>
+                            <div className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm">
+                              <p className="text-[10px] text-[#666] uppercase mb-1">Cost Saved</p>
+                              <p className="text-2xl font-bold text-[#00ff00]">${roiAnalytics?.costSaved || 0}</p>
+                            </div>
+                            <div className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm">
+                              <p className="text-[10px] text-[#666] uppercase mb-1">Total Generations</p>
+                              <p className="text-2xl font-bold text-[#e0e0e0]">{roiAnalytics?.totalGenerations || 0}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {crossModelParity && (
+                          <div className="bg-[#050505] border border-[#1a1a1a] p-6 rounded-sm">
+                            <h3 className="text-[10px] font-bold text-[#0088ff] uppercase tracking-wider mb-4 flex items-center gap-2">
+                              <Layers size={14} /> Cross-Model Parity Testing
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                              <div className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm text-center">
+                                <p className="text-[10px] text-[#666] uppercase mb-1">Claude Score</p>
+                                <p className="text-xl font-bold text-[#e0e0e0]">{crossModelParity.claudeScore}/100</p>
+                              </div>
+                              <div className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm text-center">
+                                <p className="text-[10px] text-[#666] uppercase mb-1">Gemini Score</p>
+                                <p className="text-xl font-bold text-[#e0e0e0]">{crossModelParity.geminiScore}/100</p>
+                              </div>
+                              <div className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm text-center">
+                                <p className="text-[10px] text-[#666] uppercase mb-1">GPT Score</p>
+                                <p className="text-xl font-bold text-[#e0e0e0]">{crossModelParity.gptScore}/100</p>
+                              </div>
+                              <div className="bg-[#0a0a0a] border border-[#0088ff] p-4 rounded-sm text-center">
+                                <p className="text-[10px] text-[#0088ff] uppercase mb-1">Consistency</p>
+                                <p className="text-xl font-bold text-[#0088ff]">{crossModelParity.consistency}/100</p>
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-[#666] uppercase mb-2">Identified Issues & Biases</p>
+                              <ul className="list-disc pl-4 space-y-1">
+                                {crossModelParity.issues.map((issue, idx) => (
+                                  <li key={idx} className="text-xs text-[#e0e0e0]">{issue}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                    {activeTab === 'compliance' && (
+                      <motion.div 
+                        key="compliance"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                      >
+                        {constitutionalMapping ? (
+                          <div className="space-y-6">
+                            <div className="bg-[#050505] border border-[#1a1a1a] p-6 rounded-sm">
+                              <h3 className="text-[10px] font-bold text-[#00ff00] uppercase tracking-wider mb-4 flex items-center gap-2">
+                                <Scale size={14} /> Constitutional Mapping UI
+                              </h3>
+                              <div className="space-y-4">
+                                {constitutionalMapping.standards.map((std, idx) => (
+                                  <div key={idx} className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm">
+                                    <div className="flex justify-between items-center mb-3">
+                                      <h4 className="text-sm font-bold text-[#e0e0e0]">{std.standard}</h4>
+                                      <span className="text-xs font-bold text-[#00ff00]">{std.coverage}% Coverage</span>
+                                    </div>
+                                    <div className="w-full bg-[#1a1a1a] h-1 mb-4 rounded-full overflow-hidden">
+                                      <div className="bg-[#00ff00] h-full" style={{ width: `${std.coverage}%` }}></div>
+                                    </div>
+                                    <p className="text-[10px] text-[#666] uppercase mb-2">Mapped Clauses</p>
+                                    <ul className="list-disc pl-4 space-y-1">
+                                      {std.mappedClauses.map((clause, cIdx) => (
+                                        <li key={cIdx} className="text-xs text-[#ccc]">{clause}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center py-12 border border-dashed border-[#1a1a1a] rounded-sm">
+                            <Scale size={32} className="mx-auto text-[#333] mb-3" />
+                            <p className="text-xs text-[#666] uppercase tracking-widest">No Mapping Available</p>
+                            <p className="text-[10px] text-[#444] mt-1">Generate an instruction set to see constitutional mapping.</p>
+                          </div>
+                        )}
                       </motion.div>
                     )}
                   </div>

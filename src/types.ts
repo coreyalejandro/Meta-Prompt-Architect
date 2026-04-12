@@ -117,3 +117,21 @@ export interface Retrospective {
   failureReason: string;
   suggestedUpdate: string;
 }
+
+export const CrossModelParitySchema = z.object({
+  claudeScore: z.number(),
+  geminiScore: z.number(),
+  gptScore: z.number(),
+  consistency: z.number(),
+  issues: z.array(z.string()),
+});
+export type CrossModelParityResult = z.infer<typeof CrossModelParitySchema>;
+
+export const ConstitutionalMappingSchema = z.object({
+  standards: z.array(z.object({
+    standard: z.string(),
+    coverage: z.number(),
+    mappedClauses: z.array(z.string())
+  }))
+});
+export type ConstitutionalMappingResult = z.infer<typeof ConstitutionalMappingSchema>;

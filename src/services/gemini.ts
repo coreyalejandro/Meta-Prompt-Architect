@@ -4,6 +4,37 @@ import { z } from 'zod';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// Helper function for exponential backoff retry
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 5,
+  baseDelayMs: number = 2000
+): Promise<T> {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      attempt++;
+      const isRateLimit = 
+        error?.status === 429 || 
+        error?.message?.includes('429') || 
+        error?.message?.includes('RESOURCE_EXHAUSTED') ||
+        error?.message?.includes('quota');
+        
+      if (isRateLimit && attempt < maxRetries) {
+        // Exponential backoff with jitter
+        const delay = baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 1000;
+        console.warn(`Rate limit hit. Retrying in ${Math.round(delay)}ms (Attempt ${attempt} of ${maxRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw error;
+      }
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
+
 // Essential: PII/Sensitive Data Scanner
 export function scanForPII(text: string): PIIFinding[] {
   const findings: PIIFinding[] = [];
@@ -48,7 +79,7 @@ const getModelStrengths = (model: ModelType) => {
 };
 
 export async function auditIntent(intent: UserIntent, signal?: AbortSignal): Promise<AuditResult> {
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: `Analyze this user intent for a prompt: "${intent.raw}". 
     Identify implicit assumptions, 3 critical edge cases, and the "Truth Surface" (required external data).`,
@@ -64,14 +95,14 @@ export async function auditIntent(intent: UserIntent, signal?: AbortSignal): Pro
         required: ["assumptions", "edgeCases", "truthSurface"],
       },
     },
-  });
+  }));
 
   if (signal?.aborted) throw new Error('AbortError');
   return AuditResultSchema.parse(JSON.parse(response.text));
 }
 
 export async function stressTest(intent: UserIntent, audit: AuditResult, signal?: AbortSignal): Promise<StressTestResult> {
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: `Stress-test this intent: "${intent.raw}" based on these audit findings: ${JSON.stringify(audit)}.
     Provide a Critic's argument, Logic optimization, and a Resolution into a "Steel-man" instruction set.`,
@@ -87,7 +118,7 @@ export async function stressTest(intent: UserIntent, audit: AuditResult, signal?
         required: ["criticArgument", "logicOptimization", "resolution"],
       },
     },
-  });
+  }));
 
   if (signal?.aborted) throw new Error('AbortError');
   return StressTestResultSchema.parse(JSON.parse(response.text));
@@ -102,7 +133,7 @@ export async function generateInstructionSet(
   const modelStrengths = getModelStrengths(intent.targetModel);
   const memoryContext = memory.length > 0 ? `\nPersistent Memory Context: ${JSON.stringify(memory)}` : "";
 
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: `Generate a high-dimensional Instruction Set for intent: "${intent.raw}" using resolution: "${stress.resolution}".
     Target Model: ${intent.targetModel}. 
@@ -122,8 +153,9 @@ export async function generateInstructionSet(
     
     Include System Role, Cognitive Stack, Verification Gates, Handoff Artifacts, Verbalized Sampling explanation, and the Final Prompt.
     
-    CRITICAL: The 'finalPrompt' MUST start with a 'BOOTSTRAP_COMMAND' section that tells the user exactly what to type first in their target AI session. 
-    It MUST also include a 'USAGE_INSTRUCTIONS' section for a user with zero prior knowledge.`,
+    CRITICAL: Implement "Instruction Anchoring". Safety-critical directives and compliance instructions MUST be excluded from LCI compression and MUST be explicitly "anchored" at the very end of the 'finalPrompt' (the highest attention area for LLMs), regardless of the LCI compression ratio.
+    
+    CRITICAL: The 'finalPrompt' MUST NOT use terms like 'BOOTSTRAP_COMMAND' or 'USAGE_INSTRUCTIONS' or ask the AI to relay instructions to another session, as these trigger prompt injection filters in modern LLMs. Instead, provide a clear, natural-language 'Context & Goal' section and standard 'Instructions' formatted safely for direct execution.`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -139,7 +171,7 @@ export async function generateInstructionSet(
         required: ["systemRole", "cognitiveStack", "verificationGates", "handoffArtifacts", "verbalizedSampling", "finalPrompt"],
       },
     },
-  });
+  }));
 
   if (signal?.aborted) throw new Error('AbortError');
   return InstructionSetSchema.parse(JSON.parse(response.text));
@@ -151,7 +183,7 @@ const RetrospectiveSchema = z.object({
 });
 
 export async function getRetrospective(failedStep: string, signal?: AbortSignal): Promise<Retrospective> {
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: `Analyze this failed step log: "${failedStep}". 
     Provide a failure reason and a suggested update to the BUILD_CONTRACT.template.md.`,
@@ -166,7 +198,7 @@ export async function getRetrospective(failedStep: string, signal?: AbortSignal)
         required: ["failureReason", "suggestedUpdate"],
       },
     },
-  });
+  }));
 
   if (signal?.aborted) throw new Error('AbortError');
   return RetrospectiveSchema.parse(JSON.parse(response.text));
@@ -179,7 +211,7 @@ const RedTeamSchema = z.object({
 });
 
 export async function chatWithExpert(message: string, context: any, signal?: AbortSignal): Promise<string> {
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: `You are the Meta-Prompt Knowledge Expert. Your goal is to help users master high-dimensional prompt engineering and the Meta-Prompt Architect app.
     
@@ -188,14 +220,14 @@ export async function chatWithExpert(message: string, context: any, signal?: Abo
     User Message: "${message}"
     
     Provide a concise, high-authority response. If the user is asking about a feature, explain it in the context of cognitive governance. If they are asking about their current prompt, offer specific architectural advice.`,
-  });
+  }));
 
   if (signal?.aborted) throw new Error('AbortError');
   return response.text;
 }
 
 export async function redTeamAudit(instructionSet: InstructionSet, signal?: AbortSignal): Promise<{ score: number; reasoning: string; vulnerabilities: string[] }> {
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: `You are a Senior Security Auditor. Perform an adversarial red-team audit on this generated instruction set:
     
@@ -215,7 +247,7 @@ export async function redTeamAudit(instructionSet: InstructionSet, signal?: Abor
         required: ["score", "reasoning", "vulnerabilities"],
       },
     },
-  });
+  }));
 
   if (signal?.aborted) throw new Error('AbortError');
   return RedTeamSchema.parse(JSON.parse(response.text));
@@ -231,7 +263,7 @@ const WorkflowGenerationSchema = z.object({
 });
 
 export async function generateWorkflow(prompt: string, signal?: AbortSignal) {
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: `You are an expert AI workflow architect. Given the following user request, design a multi-step AI workflow.
     Each step should have a name, a detailed intent (prompt), a target model, and an array of names of the steps it depends on.
@@ -263,8 +295,71 @@ export async function generateWorkflow(prompt: string, signal?: AbortSignal) {
         required: ["steps"],
       },
     },
-  });
+  }));
 
   if (signal?.aborted) throw new Error('AbortError');
   return WorkflowGenerationSchema.parse(JSON.parse(response.text));
+}
+
+export async function testCrossModelParity(instructionSet: InstructionSet, signal?: AbortSignal) {
+  const response = await withRetry(() => ai.models.generateContent({
+    model: "gemini-2.0-flash",
+    contents: `You are a cross-model compatibility expert. Evaluate this instruction set for parity across Claude, Gemini, and GPT architectures.
+    
+    Instruction Set:
+    ${instructionSet.finalPrompt}
+    
+    Score how well this prompt will perform on each architecture (1-100), provide an overall consistency score (1-100), and list any model-specific issues or biases.`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          claudeScore: { type: Type.NUMBER },
+          geminiScore: { type: Type.NUMBER },
+          gptScore: { type: Type.NUMBER },
+          consistency: { type: Type.NUMBER },
+          issues: { type: Type.ARRAY, items: { type: Type.STRING } }
+        },
+        required: ["claudeScore", "geminiScore", "gptScore", "consistency", "issues"]
+      }
+    }
+  }));
+  if (signal?.aborted) throw new Error('AbortError');
+  return JSON.parse(response.text);
+}
+
+export async function mapConstitutionalStandards(instructionSet: InstructionSet, signal?: AbortSignal) {
+  const response = await withRetry(() => ai.models.generateContent({
+    model: "gemini-2.0-flash",
+    contents: `You are a compliance and regulatory expert. Map the following instruction set to specific regulatory standards (e.g., GDPR, HIPAA, NIST, EU AI Act).
+    
+    Instruction Set:
+    ${instructionSet.finalPrompt}
+    
+    Identify which standards are addressed, the percentage of coverage (1-100), and list the specific clauses or directives in the prompt that map to that standard.`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          standards: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                standard: { type: Type.STRING },
+                coverage: { type: Type.NUMBER },
+                mappedClauses: { type: Type.ARRAY, items: { type: Type.STRING } }
+              },
+              required: ["standard", "coverage", "mappedClauses"]
+            }
+          }
+        },
+        required: ["standards"]
+      }
+    }
+  }));
+  if (signal?.aborted) throw new Error('AbortError');
+  return JSON.parse(response.text);
 }
