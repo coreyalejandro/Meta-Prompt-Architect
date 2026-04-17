@@ -62,6 +62,40 @@ export default function Manual({ isOpen, onClose }: ManualProps) {
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-8 space-y-12 custom-scrollbar selection:bg-[#00ff00] selection:text-[#000]">
           
+          {/* Section 0: C-RSP Protocol */}
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 text-[#00ff00]">
+              <Cpu size={18} />
+              <h3 className="text-xs font-bold uppercase tracking-wider">00. C-RSP Level 5 Protocol</h3>
+            </div>
+            <div className="bg-[#050505] border border-[#1a1a1a] p-4 rounded-sm">
+              <p className="text-[11px] text-[#e0e0e0] font-bold mb-2 uppercase tracking-tighter">Cognitive Recursive System Prompting (C-RSP)</p>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="p-2 border border-[#1a1a1a] bg-[#0a0a0a]">
+                  <span className="text-[9px] text-[#00ff00] block font-bold">[C]OGNITIVE</span>
+                  <p className="text-[9px] text-[#666]">High-dimensional reasoning and intent synthesis.</p>
+                </div>
+                <div className="p-2 border border-[#1a1a1a] bg-[#0a0a0a]">
+                  <span className="text-[9px] text-[#00ff00] block font-bold">[R]ECURSIVE</span>
+                  <p className="text-[9px] text-[#666]">Self-correcting loops that refine logic over multiple passes.</p>
+                </div>
+                <div className="p-2 border border-[#1a1a1a] bg-[#0a0a0a]">
+                  <span className="text-[9px] text-[#00ff00] block font-bold">[S]YSTEM</span>
+                  <p className="text-[9px] text-[#666]">Architectural integrity and cross-model compatibility.</p>
+                </div>
+                <div className="p-2 border border-[#1a1a1a] bg-[#0a0a0a]">
+                  <span className="text-[9px] text-[#00ff00] block font-bold">[P]ROMPTING</span>
+                  <p className="text-[9px] text-[#666]">The final executable instruction layer.</p>
+                </div>
+              </div>
+              <div className="mt-4 p-3 bg-[#001100] border border-[#00ff00]/20">
+                <p className="text-[10px] text-[#aaa]">
+                  <span className="text-[#00ff00] font-bold">LEVEL 5 GOVERNANCE:</span> The highest tier of autonomous AI orchestration. At Level 5, the system manages reasoning chains, adversarial red-teaming, and constitutional alignment with zero human intervention required during the build phase.
+                </p>
+              </div>
+            </div>
+          </section>
+
           {/* Section 1: The Core Concept */}
           <section className="space-y-4">
             <div className="flex items-center gap-2 text-[#00ff00]">
@@ -184,6 +218,41 @@ export default function Manual({ isOpen, onClose }: ManualProps) {
                 <p className="text-[10px] text-[#666] mb-3">
                   The system's internal monologue. It evaluates multiple architectures (CoT, Few-Shot, Role-Based) before selecting the optimal path.
                 </p>
+              </div>
+            </div>
+          </section>
+
+          {/* Section 6: UI Navigation & Controls */}
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 text-[#00ff00]">
+              <Layers size={18} />
+              <h3 className="text-xs font-bold uppercase tracking-wider">06. UI Navigation & Controls</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-bold text-[#e0e0e0] uppercase">Top-Level Nav</h4>
+                <ul className="text-[10px] text-[#666] space-y-2">
+                  <li><span className="text-[#00ff00]">HISTORY (Cmd+H):</span> Access all previous build iterations and search history.</li>
+                  <li><span className="text-[#00ff00]">HELP_GUIDE (Cmd+/):</span> Opens this manual for architectural reference.</li>
+                  <li><span className="text-[#00ff00]">RESET:</span> Clears the current session and resets the cognitive pipeline.</li>
+                </ul>
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-bold text-[#e0e0e0] uppercase">Main Tabs</h4>
+                <ul className="text-[10px] text-[#666] space-y-2">
+                  <li><span className="text-[#00ff00]">Executable_Prompt:</span> The final hardened instruction set for your AI.</li>
+                  <li><span className="text-[#00ff00]">Verbalized_Sampling:</span> Internal reasoning logs and architecture selection.</li>
+                  <li><span className="text-[#00ff00]">Cognitive_Audit:</span> Raw JSON data of the three-phase reasoning pipeline.</li>
+                  <li><span className="text-[#00ff00]">Snippets:</span> Pre-formatted text for GitHub, resumes, and pitches.</li>
+                </ul>
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-bold text-[#e0e0e0] uppercase">Global Controls</h4>
+                <ul className="text-[10px] text-[#666] space-y-2">
+                  <li><span className="text-[#00ff00]">Cognitive Load Monitor:</span> Visualizes reasoning density to prevent model collapse.</li>
+                  <li><span className="text-[#00ff00]">Redact PII:</span> Automated security layer to prevent data leaks.</li>
+                  <li><span className="text-[#00ff00]">Export Suite:</span> Download as JSON, Markdown, or .cursorrules.</li>
+                </ul>
               </div>
             </div>
           </section>

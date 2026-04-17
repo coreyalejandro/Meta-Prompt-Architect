@@ -15,16 +15,18 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { storage } from './utils/storage';
 import { CrossModelParityResult, ConstitutionalMappingResult } from './types';
 
+import Tooltip from './components/Tooltip';
+
 export default function App() {
   const [intent, setIntent] = useState<UserIntent>({
     raw: '',
-    targetModel: ModelType.GPT_5_PRO,
+    targetModel: ModelType.CLAUDE_SONNET_4_6,
     useLCI: true,
     lciConfig: {
       contextWindow: 128000,
       compressionRatio: 4
     },
-    highRisk: false,
+    highRisk: true,
     theme: ThemeType.DARK
   });
   const [audit, setAudit] = useState<AuditResult | null>(null);
@@ -494,18 +496,24 @@ ${instructionSet.finalPrompt}
               SYSTEM_READY
             </div>
             <div className="border-l border-[#1a1a1a] pl-4 flex items-center gap-4 flex-1 md:flex-none justify-end">
-              <button 
-                onClick={() => setShowHistory(!showHistory)}
-                className={`transition-colors flex items-center gap-1 uppercase tracking-widest whitespace-nowrap ${showHistory ? 'text-[#00ff00]' : 'text-[#666] hover:text-[#00ff00]'}`}
-              >
-                <History size={14} /> HISTORY
-              </button>
-              <button 
-                onClick={() => setIsManualOpen(true)}
-                className="text-[#666] hover:text-[#00ff00] transition-colors flex items-center gap-1 uppercase tracking-widest whitespace-nowrap"
-              >
-                <HelpCircle size={14} /> HELP_GUIDE
-              </button>
+              <Tooltip text="View and search your local build history. (Cmd/Ctrl + H)">
+                <button 
+                  onClick={() => setShowHistory(!showHistory)}
+                  className={`transition-colors flex items-center gap-2 uppercase tracking-widest whitespace-nowrap text-xs font-bold ${showHistory ? 'text-[#00ff00]' : 'text-[#888] hover:text-[#00ff00]'}`}
+                  aria-label="Toggle History"
+                >
+                  <History size={16} /> HISTORY
+                </button>
+              </Tooltip>
+              <Tooltip text="Open the Golden Documentation guide. (Cmd/Ctrl + /)">
+                <button 
+                  onClick={() => setIsManualOpen(true)}
+                  className="text-[#888] hover:text-[#00ff00] transition-colors flex items-center gap-2 uppercase tracking-widest whitespace-nowrap text-xs font-bold"
+                  aria-label="Open Help Guide"
+                >
+                  <HelpCircle size={16} /> HELP_GUIDE
+                </button>
+              </Tooltip>
             </div>
           </div>
         </header>
@@ -513,207 +521,258 @@ ${instructionSet.finalPrompt}
       <Manual isOpen={isManualOpen} onClose={() => setIsManualOpen(false)} />
       <KnowledgeExpert context={contextForExpert} />
 
-      <main className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Input & Controls */}
-        <div className="lg:col-span-4 space-y-6">
+      <main className="w-full p-6 space-y-8">
+        {/* Input & Controls Section */}
+        <div className="w-full space-y-6">
           <section className="bg-[#0f0f0f] border border-[#1a1a1a] p-4 rounded-sm space-y-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 text-[#00ff00]">
                 <Terminal size={16} />
                 <h2 className="text-xs font-bold uppercase tracking-wider">Environmental Scan</h2>
               </div>
-              <button 
-                onClick={handleReset}
-                className="text-[9px] text-[#666] hover:text-[#ff0000] transition-colors uppercase tracking-widest flex items-center gap-1"
-                title="Clear all inputs and results"
-              >
-                <RefreshCw size={10} /> RESET
-              </button>
+              <Tooltip text="Clear all current inputs, audits, and generated instruction sets.">
+                <button 
+                  onClick={handleReset}
+                  className="text-[10px] text-[#888] hover:text-[#ff0000] transition-colors uppercase tracking-widest flex items-center gap-2 font-bold"
+                  aria-label="Reset Session"
+                >
+                  <RefreshCw size={12} /> RESET
+                </button>
+              </Tooltip>
             </div>
             
             <div className="space-y-4">
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-[10px] text-[#666] uppercase block">User Intent / Idea</label>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-[11px] text-[#aaa] uppercase font-bold tracking-wider block">User Intent / Idea</label>
                   <button 
                     onClick={() => {
                       // Logic to trigger expert advice on current intent
                       alert("Expert Analysis: Your intent is high-dimensional. Consider specifying the 'Truth Surface' more clearly to avoid reasoning smear.");
                     }}
-                    className="text-[8px] text-[#00ff00] uppercase font-bold flex items-center gap-1 hover:text-[#00cc00]"
+                    className="text-[10px] text-[#00ff00] uppercase font-bold flex items-center gap-1 hover:text-[#00cc00] transition-colors"
+                    aria-label="Get expert advice"
                   >
-                    <Sparkles size={8} /> Expert_Advice
+                    <Sparkles size={10} /> Expert_Advice
                   </button>
                 </div>
-                <textarea 
-                  value={intent.raw}
-                  onChange={(e) => setIntent(prev => ({ ...prev, raw: e.target.value }))}
-                  placeholder="Describe what you want the AI to do..."
-                  className="w-full h-32 bg-[#050505] border border-[#1a1a1a] p-3 text-xs focus:border-[#00ff00] outline-none transition-colors resize-none"
-                />
+                <Tooltip text="Enter your raw AI intent or prompt idea here. Be as descriptive as possible.">
+                  <textarea 
+                    value={intent.raw}
+                    onChange={(e) => setIntent(prev => ({ ...prev, raw: e.target.value }))}
+                    placeholder="Describe what you want the AI to do..."
+                    className="w-full h-96 min-h-[300px] bg-[#050505] border border-[#1a1a1a] p-6 text-base focus:border-[#00ff00] outline-none transition-colors resize-y custom-scrollbar"
+                    aria-label="AI Intent Input"
+                  />
+                </Tooltip>
                 <AnimatePresence>
                   {piiFindings.length > 0 && (
                     <motion.div 
                       initial={{ opacity: 0, y: -5 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="mt-2 p-2 bg-[#1a0505] border border-[#ff0000] flex items-center justify-between"
+                      className="mt-2 p-3 bg-[#1a0505] border border-[#ff0000] flex items-center justify-between"
                     >
                       <div className="flex items-center gap-2 text-[#ff0000]">
-                        <ShieldAlert size={12} />
-                        <span className="text-[10px] font-bold">PII DETECTED ({piiFindings.length})</span>
+                        <ShieldAlert size={14} />
+                        <span className="text-xs font-bold uppercase">PII DETECTED ({piiFindings.length})</span>
                       </div>
-                      <button
-                        onClick={handleRedactPII}
-                        className="text-[9px] bg-[#ff0000] text-white px-2 py-1 hover:bg-[#cc0000] transition-colors uppercase font-bold"
-                      >
-                        Redact All
-                      </button>
+                      <Tooltip text="Automatically redact detected PII (emails, phones, etc.) from your intent text.">
+                        <button
+                          onClick={handleRedactPII}
+                          className="text-[10px] bg-[#ff0000] text-white px-3 py-1.5 hover:bg-[#cc0000] transition-colors uppercase font-bold rounded-sm"
+                        >
+                          Redact All
+                        </button>
+                      </Tooltip>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-4">
                 <div>
-                  <label className="text-[10px] text-[#666] uppercase block mb-1">Target Model</label>
-                  <select 
-                    value={intent.targetModel}
-                    onChange={(e) => setIntent(prev => ({ ...prev, targetModel: e.target.value as ModelType }))}
-                    className="w-full bg-[#050505] border border-[#1a1a1a] p-2 text-[10px] outline-none focus:border-[#00ff00]"
-                  >
-                    {Object.values(ModelType).map(m => (
-                      <option key={m} value={m}>{m.toUpperCase()}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex flex-col justify-end gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer group">
-                    <input 
-                      type="checkbox" 
-                      checked={intent.useLCI}
-                      onChange={(e) => setIntent(prev => ({ ...prev, useLCI: e.target.checked }))}
-                      className="hidden"
-                      aria-label="Enable Linear Context Injection"
-                    />
-                    <div 
-                      className={`w-3 h-3 border border-[#1a1a1a] flex items-center justify-center transition-colors ${intent.useLCI ? 'bg-[#00ff00] border-[#00ff00]' : 'bg-[#050505]'}`}
-                      role="checkbox"
-                      aria-checked={intent.useLCI}
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setIntent(prev => ({ ...prev, useLCI: !prev.useLCI }));
-                        }
-                      }}
-                    >
-                      {intent.useLCI && <div className="w-1.5 h-1.5 bg-[#000]" />}
-                    </div>
-                    <span className="text-[10px] text-[#666] group-hover:text-[#e0e0e0] transition-colors uppercase tracking-tighter">LCI_ACTIVE</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[11px] text-[#aaa] uppercase font-bold tracking-wider block">Target Model Architecture</label>
+                    <Tooltip text="Select the base model architecture for instruction optimization. Each model has unique reasoning biases.">
+                      <Info size={14} className="text-[#666] hover:text-[#00ff00] cursor-help" />
+                    </Tooltip>
+                  </div>
                   
-                  {intent.useLCI && (
-                    <motion.div 
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="space-y-2 pt-2 border-t border-[#1a1a1a]"
-                    >
-                      <div className="flex justify-between items-center">
-                        <label className="text-[8px] text-[#444] uppercase">Context Window</label>
-                        <span className="text-[8px] text-[#00ff00]">{intent.lciConfig.contextWindow.toLocaleString()}</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {Object.values(ModelType).map(m => (
+                      <button
+                        key={m}
+                        onClick={() => setIntent(prev => ({ ...prev, targetModel: m }))}
+                        className={`p-3 border text-[10px] font-bold uppercase transition-all flex flex-col items-center justify-center gap-1 ${
+                          intent.targetModel === m 
+                            ? 'bg-[#00ff00] border-[#00ff00] text-[#000] shadow-[0_0_15px_rgba(0,255,0,0.2)]' 
+                            : 'bg-[#050505] border-[#1a1a1a] text-[#888] hover:border-[#333] hover:text-[#aaa]'
+                        }`}
+                        aria-pressed={intent.targetModel === m}
+                      >
+                        <span>{m.split('_')[0]}</span>
+                        <span className="text-[8px] opacity-70 tracking-widest">{m.split('_').slice(1).join(' ')}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-6 p-5 bg-[#050505] border border-[#1a1a1a]">
+                  <div className="space-y-5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                          <input 
+                            type="checkbox" 
+                            checked={intent.useLCI}
+                            onChange={(e) => setIntent(prev => ({ ...prev, useLCI: e.target.checked }))}
+                            className="sr-only"
+                          />
+                          <div 
+                            className={`w-5 h-5 border border-[#333] flex items-center justify-center transition-colors ${intent.useLCI ? 'bg-[#00ff00] border-[#00ff00]' : 'bg-[#0a0a0a] group-hover:border-[#444]'}`}
+                          >
+                            {intent.useLCI && <div className="w-2.5 h-2.5 bg-[#000]" />}
+                          </div>
+                          <span className="text-[11px] text-[#e0e0e0] uppercase font-bold tracking-wider">LCI_ACTIVE</span>
+                        </label>
+                        <Tooltip text="Linear Context Injection: Optimizes token usage for long-context reasoning stability.">
+                          <Info size={12} className="text-[#666] hover:text-[#00ff00] cursor-help" />
+                        </Tooltip>
                       </div>
-                      <input 
-                        type="range" 
-                        min="8000" 
-                        max="1000000" 
-                        step="8000"
-                        value={intent.lciConfig.contextWindow}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          setIntent(prev => ({ 
-                            ...prev, 
-                            lciConfig: { ...prev.lciConfig, contextWindow: val } 
-                          }));
-                        }}
-                        className="w-full h-1 bg-[#050505] appearance-none cursor-pointer accent-[#00ff00]"
-                      />
-                      
-                      <div className="flex justify-between items-center">
-                        <label className="text-[8px] text-[#444] uppercase">Compression Ratio</label>
-                        <span className="text-[8px] text-[#00ff00]">{intent.lciConfig.compressionRatio}:1</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="1" 
-                        max="20" 
-                        step="1"
-                        value={intent.lciConfig.compressionRatio}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          setIntent(prev => ({ 
-                            ...prev, 
-                            lciConfig: { ...prev.lciConfig, compressionRatio: val } 
-                          }));
-                        }}
-                        className="w-full h-1 bg-[#050505] appearance-none cursor-pointer accent-[#00ff00]"
-                      />
-                    </motion.div>
-                  )}
-                  <label className="flex items-center gap-2 cursor-pointer group">
-                    <input 
-                      type="checkbox" 
-                      checked={intent.highRisk}
-                      onChange={(e) => setIntent(prev => ({ ...prev, highRisk: e.target.checked }))}
-                      className="hidden"
-                      aria-label="Enable High Risk Audit"
-                    />
-                    <div 
-                      className={`w-3 h-3 border border-[#1a1a1a] flex items-center justify-center transition-colors ${intent.highRisk ? 'bg-[#ff0000] border-[#ff0000]' : 'bg-[#050505]'}`}
-                      role="checkbox"
-                      aria-checked={intent.highRisk}
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setIntent(prev => ({ ...prev, highRisk: !prev.highRisk }));
-                        }
-                      }}
-                    >
-                      {intent.highRisk && <div className="w-1.5 h-1.5 bg-[#000]" />}
                     </div>
-                    <span className="text-[10px] text-[#666] group-hover:text-[#e0e0e0] transition-colors">HIGH_RISK_AUDIT</span>
-                  </label>
+
+                    {intent.useLCI && (
+                      <div className="space-y-4">
+                        <div className="flex gap-2">
+                          {[
+                            { label: 'Standard', window: 128000, ratio: 4 },
+                            { label: 'Deep', window: 512000, ratio: 8 },
+                            { label: 'Infinite', window: 1000000, ratio: 16 },
+                            { label: 'Custom', window: intent.lciConfig.contextWindow, ratio: intent.lciConfig.compressionRatio }
+                          ].map(preset => (
+                            <button
+                              key={preset.label}
+                              onClick={() => {
+                                if (preset.label !== 'Custom') {
+                                  setIntent(prev => ({
+                                    ...prev,
+                                    lciConfig: { contextWindow: preset.window, compressionRatio: preset.ratio }
+                                  }));
+                                }
+                              }}
+                              className={`flex-1 py-2 px-2 text-[9px] font-bold uppercase border transition-all ${
+                                (preset.label !== 'Custom' && intent.lciConfig.contextWindow === preset.window && intent.lciConfig.compressionRatio === preset.ratio) ||
+                                (preset.label === 'Custom' && ![128000, 512000, 1000000].includes(intent.lciConfig.contextWindow))
+                                  ? 'bg-[#00ff00]/10 border-[#00ff00] text-[#00ff00]'
+                                  : 'bg-[#0a0a0a] border-[#1a1a1a] text-[#888] hover:text-[#aaa]'
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <AnimatePresence>
+                          {(![128000, 512000, 1000000].includes(intent.lciConfig.contextWindow) || intent.lciConfig.compressionRatio !== (intent.lciConfig.contextWindow === 128000 ? 4 : intent.lciConfig.contextWindow === 512000 ? 8 : 16)) && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="space-y-4 pt-2"
+                            >
+                              <div className="space-y-2">
+                                <div className="flex justify-between text-[10px] uppercase font-bold">
+                                  <span className="text-[#888]">Context Window</span>
+                                  <span className="text-[#00ff00]">{intent.lciConfig.contextWindow.toLocaleString()}</span>
+                                </div>
+                                <input 
+                                  type="range" min="8000" max="1000000" step="8000"
+                                  value={intent.lciConfig.contextWindow}
+                                  onChange={(e) => setIntent(prev => ({ ...prev, lciConfig: { ...prev.lciConfig, contextWindow: Number(e.target.value) } }))}
+                                  className="w-full h-1.5 bg-[#1a1a1a] appearance-none cursor-pointer accent-[#00ff00] rounded-full"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex justify-between text-[10px] uppercase font-bold">
+                                  <span className="text-[#888]">Compression Ratio</span>
+                                  <span className="text-[#00ff00]">{intent.lciConfig.compressionRatio}:1</span>
+                                </div>
+                                <input 
+                                  type="range" min="1" max="20" step="1"
+                                  value={intent.lciConfig.compressionRatio}
+                                  onChange={(e) => setIntent(prev => ({ ...prev, lciConfig: { ...prev.lciConfig, compressionRatio: Number(e.target.value) } }))}
+                                  className="w-full h-1.5 bg-[#1a1a1a] appearance-none cursor-pointer accent-[#00ff00] rounded-full"
+                                />
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col justify-center border-t md:border-t-0 md:border-l border-[#1a1a1a] pt-6 md:pt-0 md:pl-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                          <input 
+                            type="checkbox" 
+                            checked={intent.highRisk}
+                            onChange={(e) => setIntent(prev => ({ ...prev, highRisk: e.target.checked }))}
+                            className="sr-only"
+                          />
+                          <div 
+                            className={`w-5 h-5 border border-[#333] flex items-center justify-center transition-colors ${intent.highRisk ? 'bg-[#ff0000] border-[#ff0000]' : 'bg-[#0a0a0a] group-hover:border-[#444]'}`}
+                          >
+                            {intent.highRisk && <div className="w-2.5 h-2.5 bg-[#000]" />}
+                          </div>
+                          <span className="text-[11px] text-[#ff0000] uppercase font-bold tracking-wider">High_Risk_Audit</span>
+                        </label>
+                        <Tooltip text="Enables deep adversarial scanning and forensic logic checks. Recommended for production-grade builds.">
+                          <Info size={12} className="text-[#666] hover:text-[#ff0000] cursor-help" />
+                        </Tooltip>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-[#888] leading-relaxed">
+                      When active, the system triggers a recursive red-team pipeline to identify logical escapes and safety vulnerabilities in the generated instruction set.
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              <button 
-                onClick={handleGenerate}
-                disabled={loading || !intent.raw}
-                className="w-full bg-[#00ff00] text-[#000] py-3 text-xs font-bold uppercase tracking-widest hover:bg-[#00cc00] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
-              >
-                {loading ? <RefreshCw className="animate-spin" size={16} /> : <Zap size={16} />}
-                Execute Pipeline
-              </button>
+              <Tooltip text="Initialize the recursive build pipeline. (Cmd/Ctrl + Enter)">
+                <button 
+                  onClick={handleGenerate}
+                  disabled={loading || !intent.raw}
+                  className="w-full bg-[#00ff00] text-[#000] py-4 text-sm font-bold uppercase tracking-widest hover:bg-[#00cc00] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-3 rounded-sm shadow-lg active:scale-[0.98]"
+                  aria-label="Execute Build Pipeline"
+                >
+                  {loading ? <RefreshCw className="animate-spin" size={18} /> : <Zap size={18} />}
+                  Execute Pipeline
+                </button>
+              </Tooltip>
             </div>
           </section>
 
           <section className="bg-[#0f0f0f] border border-[#1a1a1a] p-4 rounded-sm space-y-4">
             <div className="flex items-center gap-2 text-[#ff0000] mb-2">
-              <ShieldAlert size={16} />
+              <ShieldAlert size={18} />
               <h2 className="text-xs font-bold uppercase tracking-wider">Recursive Error-Correction</h2>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-4">
               <textarea 
                 value={failedStep}
                 onChange={(e) => setFailedStep(e.target.value)}
                 placeholder="Paste failed step logs here..."
-                className="w-full h-20 bg-[#050505] border border-[#1a1a1a] p-3 text-[10px] focus:border-[#ff0000] outline-none transition-colors resize-none"
+                className="w-full h-64 bg-[#050505] border border-[#1a1a1a] p-6 text-base focus:border-[#ff0000] outline-none transition-colors resize-y custom-scrollbar"
+                aria-label="Failed Step Logs Input"
               />
               <button 
                 onClick={handleRetrospective}
                 disabled={loading || !failedStep}
-                className="w-full border border-[#ff0000] text-[#ff0000] py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-[#ff0000] hover:text-[#000] transition-all"
+                className="w-full border border-[#ff0000] text-[#ff0000] py-4 text-sm font-bold uppercase tracking-widest hover:bg-[#ff0000] hover:text-[#000] transition-all rounded-sm shadow-lg active:scale-[0.98]"
+                aria-label="Run Retrospective Analysis"
               >
                 Run Retrospective
               </button>
@@ -743,8 +802,8 @@ ${instructionSet.finalPrompt}
           </section>
         </div>
 
-        {/* Right Column: Results */}
-        <div className="lg:col-span-8 space-y-6">
+        {/* Results Section */}
+        <div className="w-full space-y-6">
           <AnimatePresence mode="wait">
             {showHistory ? (
               <motion.div 
@@ -797,8 +856,8 @@ ${instructionSet.finalPrompt}
                   <div className="absolute inset-0 border-4 border-t-[#00ff00] rounded-full animate-spin" />
                 </div>
                 <div className="text-center">
-                  <p className="text-xs font-bold tracking-widest uppercase animate-pulse">Processing Cognitive Pipeline</p>
-                  <p className="text-[10px] text-[#666] mt-1">Synthesizing high-dimensional instruction set...</p>
+                  <p className="text-sm font-bold tracking-widest uppercase animate-pulse">Processing Cognitive Pipeline</p>
+                  <p className="text-xs text-[#999] mt-1">Synthesizing high-dimensional instruction set...</p>
                 </div>
               </motion.div>
             ) : instructionSet ? (
@@ -808,51 +867,53 @@ ${instructionSet.finalPrompt}
                 className="space-y-6"
               >
                 {/* Cognitive Load Monitor */}
-                <div 
-                  className="bg-[#0f0f0f] border border-[#1a1a1a] p-4 rounded-sm"
-                  role="meter"
-                  aria-label="Cognitive Load"
-                  aria-valuenow={getCognitiveLoad()}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-live="polite"
-                >
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[10px] text-[#666] uppercase font-bold">Cognitive Load Monitor</span>
-                    <span className={`text-[10px] font-bold ${getCognitiveLoad() > 80 ? 'text-[#ff0000]' : getCognitiveLoad() > 50 ? 'text-[#ffaa00]' : 'text-[#00ff00]'}`}>
-                      {getCognitiveLoad()}% DENSITY
-                    </span>
-                  </div>
-                  <div className="w-full h-1.5 bg-[#050505] rounded-full overflow-hidden">
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${getCognitiveLoad()}%` }}
-                      className={`h-full ${getCognitiveLoad() > 80 ? 'bg-[#ff0000]' : getCognitiveLoad() > 50 ? 'bg-[#ffaa00]' : 'bg-[#00ff00]'}`}
-                    />
-                  </div>
-                  <p className="text-[9px] text-[#444] mt-2">
-                    {getCognitiveLoadMessage()}
-                  </p>
+                <Tooltip text="Visualizes reasoning density to prevent model collapse. High density may require LCI optimization.">
+                  <div 
+                    className="bg-[#0f0f0f] border border-[#1a1a1a] p-4 rounded-sm"
+                    role="meter"
+                    aria-label="Cognitive Load"
+                    aria-valuenow={getCognitiveLoad()}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-live="polite"
+                  >
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[11px] text-[#aaa] uppercase font-bold">Cognitive Load Monitor</span>
+                      <span className={`text-[11px] font-bold ${getCognitiveLoad() > 80 ? 'text-[#ff0000]' : getCognitiveLoad() > 50 ? 'text-[#ffaa00]' : 'text-[#00ff00]'}`}>
+                        {getCognitiveLoad()}% DENSITY
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-[#050505] rounded-full overflow-hidden">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${getCognitiveLoad()}%` }}
+                        className={`h-full ${getCognitiveLoad() > 80 ? 'bg-[#ff0000]' : getCognitiveLoad() > 50 ? 'bg-[#ffaa00]' : 'bg-[#00ff00]'}`}
+                      />
+                    </div>
+                    <p className="text-[11px] text-[#888] mt-2">
+                      {getCognitiveLoadMessage()}
+                    </p>
 
-                  {getCognitiveLoad() > 80 && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-4 p-3 bg-[#1a0000] border border-[#ff0000] rounded-sm"
-                    >
-                      <div className="flex items-center gap-2 text-[#ff0000] mb-2">
-                        <AlertCircle size={14} />
-                        <span className="text-[10px] font-bold uppercase">Mitigation Strategies</span>
-                      </div>
-                      <ul className="text-[9px] text-[#aaa] space-y-1 list-disc list-inside">
-                        <li>Reduce the number of non-negotiable directives in your intent.</li>
-                        <li>Increase LCI Compression Ratio to squeeze more context.</li>
-                        <li>Switch to a higher-capacity model (e.g., Gemini 2.0 Pro).</li>
-                        <li>Decompose the high-dimensional build into smaller sub-tasks.</li>
-                      </ul>
-                    </motion.div>
-                  )}
-                </div>
+                    {getCognitiveLoad() > 80 && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-4 p-4 bg-[#1a0000] border border-[#ff0000] rounded-sm"
+                      >
+                        <div className="flex items-center gap-2 text-[#ff0000] mb-2">
+                          <AlertCircle size={16} />
+                          <span className="text-xs font-bold uppercase">Mitigation Strategies</span>
+                        </div>
+                        <ul className="text-[11px] text-[#aaa] space-y-2 list-disc list-inside">
+                          <li>Reduce the number of non-negotiable directives in your intent.</li>
+                          <li>Increase LCI Compression Ratio to squeeze more context.</li>
+                          <li>Switch to a higher-capacity model (e.g., Gemini 2.0 Pro).</li>
+                          <li>Decompose the high-dimensional build into smaller sub-tasks.</li>
+                        </ul>
+                      </motion.div>
+                    )}
+                  </div>
+                </Tooltip>
 
                 {/* Audit Findings View */}
                 {audit && stress && <AuditView audit={audit} stress={stress} />}
@@ -861,62 +922,80 @@ ${instructionSet.finalPrompt}
                 <div className="bg-[#0f0f0f] border border-[#1a1a1a] rounded-sm overflow-hidden flex flex-col">
                   <div className="bg-[#1a1a1a] p-1 flex items-center justify-between overflow-x-auto no-scrollbar">
                     <div className="flex flex-nowrap min-w-0">
-                      <button 
-                        onClick={() => setActiveTab('prompt')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'prompt' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
-                      >
-                        <FileCode size={12} /> Executable_Prompt
-                      </button>
-                      <button 
-                        onClick={() => setActiveTab('sampling')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'sampling' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
-                      >
-                        <Zap size={12} /> Verbalized_Sampling
-                      </button>
-                      <button 
-                        onClick={() => setActiveTab('audit')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'audit' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
-                      >
-                        <Eye size={12} /> Cognitive_Audit
-                      </button>
-                      <button 
-                        onClick={() => setActiveTab('docs')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'docs' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
-                      >
-                        <FileText size={12} /> Snippets
-                      </button>
-                      <button 
-                        onClick={() => setActiveTab('history')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'history' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
-                      >
-                        <History size={12} /> Version_Control
-                      </button>
-                      <button 
-                        onClick={() => setActiveTab('workflow')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'workflow' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
-                      >
-                        <GitBranch size={12} /> Workflow
-                      </button>
-                      <button 
-                        onClick={() => setActiveTab('analytics')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'analytics' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
-                      >
-                        <Activity size={12} /> Analytics
-                      </button>
-                      <button 
-                        onClick={() => setActiveTab('compliance')}
-                        className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'compliance' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
-                      >
-                        <Scale size={12} /> Compliance
-                      </button>
+                      <Tooltip text="The final hardened instruction set for your AI.">
+                        <button 
+                          onClick={() => setActiveTab('prompt')}
+                          className={`px-5 py-3 text-[11px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'prompt' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#888] hover:text-[#aaa]'}`}
+                        >
+                          <FileCode size={14} /> Executable_Prompt
+                        </button>
+                      </Tooltip>
+                      <Tooltip text="Internal reasoning logs and architecture selection.">
+                        <button 
+                          onClick={() => setActiveTab('sampling')}
+                          className={`px-5 py-3 text-[11px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'sampling' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#888] hover:text-[#aaa]'}`}
+                        >
+                          <Zap size={14} /> Verbalized_Sampling
+                        </button>
+                      </Tooltip>
+                      <Tooltip text="Raw JSON data of the three-phase reasoning pipeline.">
+                        <button 
+                          onClick={() => setActiveTab('audit')}
+                          className={`px-5 py-3 text-[11px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'audit' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#888] hover:text-[#aaa]'}`}
+                        >
+                          <Eye size={14} /> Cognitive_Audit
+                        </button>
+                      </Tooltip>
+                      <Tooltip text="Pre-formatted text for GitHub, resumes, and pitches.">
+                        <button 
+                          onClick={() => setActiveTab('docs')}
+                          className={`px-5 py-3 text-[11px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'docs' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#888] hover:text-[#aaa]'}`}
+                        >
+                          <FileText size={14} /> Snippets
+                        </button>
+                      </Tooltip>
+                      <Tooltip text="Local history of all generated builds.">
+                        <button 
+                          onClick={() => setActiveTab('history')}
+                          className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'history' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                        >
+                          <History size={12} /> Version_Control
+                        </button>
+                      </Tooltip>
+                      <Tooltip text="Visual representation of the prompt architecture.">
+                        <button 
+                          onClick={() => setActiveTab('workflow')}
+                          className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'workflow' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                        >
+                          <GitBranch size={12} /> Workflow
+                        </button>
+                      </Tooltip>
+                      <Tooltip text="ROI and efficiency metrics for the current build.">
+                        <button 
+                          onClick={() => setActiveTab('analytics')}
+                          className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'analytics' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                        >
+                          <Activity size={12} /> Analytics
+                        </button>
+                      </Tooltip>
+                      <Tooltip text="Regulatory and safety compliance audit.">
+                        <button 
+                          onClick={() => setActiveTab('compliance')}
+                          className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'compliance' ? 'bg-[#0f0f0f] text-[#00ff00]' : 'text-[#666] hover:text-[#aaa]'}`}
+                        >
+                          <Scale size={12} /> Compliance
+                        </button>
+                      </Tooltip>
                     </div>
                     <div className="flex items-center gap-2 pr-2 ml-4 flex-shrink-0">
-                      <button 
-                        onClick={handleCopyFullStack}
-                        className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 font-bold"
-                      >
-                        <Copy size={12} /> COPY FULL STACK
-                      </button>
+                      <Tooltip text="Copy the entire instruction set, system role, and cognitive stack to clipboard.">
+                        <button 
+                          onClick={handleCopyFullStack}
+                          className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 font-bold"
+                        >
+                          <Copy size={12} /> COPY FULL STACK
+                        </button>
+                      </Tooltip>
                     </div>
                   </div>
 
@@ -977,15 +1056,21 @@ ${instructionSet.finalPrompt}
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <button onClick={() => handleBoxCopy(instructionSet.finalPrompt)} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Copy to clipboard">
-                                <Copy size={12} /> COPY
-                              </button>
-                              <button onClick={() => handleBoxExport('Instruction Set Payload', instructionSet.finalPrompt, 'json')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download JSON">
-                                <FileJson size={12} /> JSON
-                              </button>
-                              <button onClick={() => handleBoxExport('Instruction Set Payload', instructionSet.finalPrompt, 'md')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download Markdown">
-                                <FileText size={12} /> MD
-                              </button>
+                              <Tooltip text="Copy instruction set to clipboard.">
+                                <button onClick={() => handleBoxCopy(instructionSet.finalPrompt)} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors">
+                                  <Copy size={12} /> COPY
+                                </button>
+                              </Tooltip>
+                              <Tooltip text="Download instruction set as JSON.">
+                                <button onClick={() => handleBoxExport('Instruction Set Payload', instructionSet.finalPrompt, 'json')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors">
+                                  <FileJson size={12} /> JSON
+                                </button>
+                              </Tooltip>
+                              <Tooltip text="Download instruction set as Markdown.">
+                                <button onClick={() => handleBoxExport('Instruction Set Payload', instructionSet.finalPrompt, 'md')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors">
+                                  <FileText size={12} /> MD
+                                </button>
+                              </Tooltip>
                             </div>
                           </div>
                           <pre className="bg-[#050505] p-4 text-[11px] text-[#aaa] leading-relaxed whitespace-pre-wrap border border-[#1a1a1a] max-h-96 overflow-y-auto custom-scrollbar font-mono">
@@ -1003,15 +1088,21 @@ ${instructionSet.finalPrompt}
                             <h4 className="text-xs font-bold uppercase tracking-wider">Advanced Verbalized Sampling Analysis</h4>
                           </div>
                           <div className="flex items-center gap-2">
-                            <button onClick={() => handleBoxCopy(instructionSet.verbalizedSampling || "No sampling data available")} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Copy to clipboard">
-                              <Copy size={12} /> COPY
-                            </button>
-                            <button onClick={() => handleBoxExport('Verbalized Sampling Analysis', instructionSet.verbalizedSampling || "No sampling data available", 'json')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download JSON">
-                              <FileJson size={12} /> JSON
-                            </button>
-                            <button onClick={() => handleBoxExport('Verbalized Sampling Analysis', instructionSet.verbalizedSampling || "No sampling data available", 'md')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download Markdown">
-                              <FileText size={12} /> MD
-                            </button>
+                            <Tooltip text="Copy sampling data to clipboard.">
+                              <button onClick={() => handleBoxCopy(instructionSet.verbalizedSampling || "No sampling data available")} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors">
+                                <Copy size={12} /> COPY
+                              </button>
+                            </Tooltip>
+                            <Tooltip text="Download sampling data as JSON.">
+                              <button onClick={() => handleBoxExport('Verbalized Sampling Analysis', instructionSet.verbalizedSampling || "No sampling data available", 'json')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors">
+                                <FileJson size={12} /> JSON
+                              </button>
+                            </Tooltip>
+                            <Tooltip text="Download sampling data as Markdown.">
+                              <button onClick={() => handleBoxExport('Verbalized Sampling Analysis', instructionSet.verbalizedSampling || "No sampling data available", 'md')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors">
+                                <FileText size={12} /> MD
+                              </button>
+                            </Tooltip>
                           </div>
                         </div>
                         <div className="bg-[#050505] border border-[#1a1a1a] p-6 rounded-sm">
@@ -1183,25 +1274,27 @@ ${instructionSet.finalPrompt}
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="relative">
-                              <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-[#666]" size={12} />
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#666]" size={14} />
                               <input 
                                 type="text"
                                 placeholder="Search intent..."
                                 value={historySearchTerm}
                                 onChange={(e) => setHistorySearchTerm(e.target.value)}
-                                className="bg-[#050505] border border-[#1a1a1a] pl-6 pr-2 py-1 text-[10px] text-[#e0e0e0] outline-none focus:border-[#00ff00] w-40"
+                                className="bg-[#050505] border border-[#1a1a1a] pl-9 pr-3 py-2 text-xs text-[#e0e0e0] outline-none focus:border-[#00ff00] w-48 rounded-sm"
+                                aria-label="Search History"
                               />
                             </div>
                             <input 
                               type="date"
                               value={historyFilterDate}
                               onChange={(e) => setHistoryFilterDate(e.target.value)}
-                              className="bg-[#050505] border border-[#1a1a1a] px-2 py-1 text-[10px] text-[#e0e0e0] outline-none focus:border-[#00ff00]"
+                              className="bg-[#050505] border border-[#1a1a1a] px-3 py-2 text-xs text-[#e0e0e0] outline-none focus:border-[#00ff00] rounded-sm"
+                              aria-label="Filter by Date"
                             />
                             {(historySearchTerm || historyFilterDate) && (
                               <button 
                                 onClick={() => { setHistorySearchTerm(''); setHistoryFilterDate(''); }}
-                                className="text-[9px] text-[#ff0000] hover:text-[#cc0000] uppercase font-bold ml-2"
+                                className="text-[10px] text-[#ff0000] hover:text-[#cc0000] uppercase font-bold ml-3"
                               >
                                 Clear
                               </button>
@@ -1225,11 +1318,11 @@ ${instructionSet.finalPrompt}
                                   setStress(item.results.stress);
                                 }}
                               >
-                                <div className="flex justify-between items-center mb-1">
-                                  <span className="text-[9px] text-[#00ff00] font-bold">v{history.length - i}.0</span>
-                                  <span className="text-[8px] text-[#444]">{new Date(item.timestamp).toLocaleTimeString()}</span>
+                                <div className="flex justify-between items-center mb-2">
+                                  <span className="text-[10px] text-[#00ff00] font-bold">v{history.length - i}.0</span>
+                                  <span className="text-[10px] text-[#666]">{new Date(item.timestamp).toLocaleTimeString()}</span>
                                 </div>
-                                <p className="text-[10px] text-[#aaa] line-clamp-1">{item.intent.raw}</p>
+                                <p className="text-xs text-[#aaa] line-clamp-1">{item.intent.raw}</p>
                               </div>
                             ))}
                           </div>
@@ -1265,53 +1358,53 @@ ${instructionSet.finalPrompt}
                         className="space-y-6"
                       >
                         <div className="bg-[#050505] border border-[#1a1a1a] p-6 rounded-sm">
-                          <h3 className="text-[10px] font-bold text-[#0088ff] uppercase tracking-wider mb-4 flex items-center gap-2">
-                            <Activity size={14} /> ROI Analytics Dashboard
+                          <h3 className="text-xs font-bold text-[#0088ff] uppercase tracking-wider mb-4 flex items-center gap-2">
+                            <Activity size={16} /> ROI Analytics Dashboard
                           </h3>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm">
-                              <p className="text-[10px] text-[#666] uppercase mb-1">Time Saved</p>
-                              <p className="text-2xl font-bold text-[#e0e0e0]">{roiAnalytics?.timeSaved || 0} <span className="text-sm text-[#888]">hrs</span></p>
+                            <div className="bg-[#0a0a0a] border border-[#1a1a1a] p-5 rounded-sm">
+                              <p className="text-[11px] text-[#888] uppercase mb-2 font-bold">Time Saved</p>
+                              <p className="text-3xl font-bold text-[#e0e0e0]">{roiAnalytics?.timeSaved || 0} <span className="text-base text-[#666]">hrs</span></p>
                             </div>
-                            <div className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm">
-                              <p className="text-[10px] text-[#666] uppercase mb-1">Cost Saved</p>
-                              <p className="text-2xl font-bold text-[#00ff00]">${roiAnalytics?.costSaved || 0}</p>
+                            <div className="bg-[#0a0a0a] border border-[#1a1a1a] p-5 rounded-sm">
+                              <p className="text-[11px] text-[#888] uppercase mb-2 font-bold">Cost Saved</p>
+                              <p className="text-3xl font-bold text-[#00ff00]">${roiAnalytics?.costSaved || 0}</p>
                             </div>
-                            <div className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm">
-                              <p className="text-[10px] text-[#666] uppercase mb-1">Total Generations</p>
-                              <p className="text-2xl font-bold text-[#e0e0e0]">{roiAnalytics?.totalGenerations || 0}</p>
+                            <div className="bg-[#0a0a0a] border border-[#1a1a1a] p-5 rounded-sm">
+                              <p className="text-[11px] text-[#888] uppercase mb-2 font-bold">Total Generations</p>
+                              <p className="text-3xl font-bold text-[#e0e0e0]">{roiAnalytics?.totalGenerations || 0}</p>
                             </div>
                           </div>
                         </div>
 
                         {crossModelParity && (
                           <div className="bg-[#050505] border border-[#1a1a1a] p-6 rounded-sm">
-                            <h3 className="text-[10px] font-bold text-[#0088ff] uppercase tracking-wider mb-4 flex items-center gap-2">
-                              <Layers size={14} /> Cross-Model Parity Testing
+                            <h3 className="text-xs font-bold text-[#0088ff] uppercase tracking-wider mb-4 flex items-center gap-2">
+                              <Layers size={16} /> Cross-Model Parity Testing
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                              <div className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm text-center">
-                                <p className="text-[10px] text-[#666] uppercase mb-1">Claude Score</p>
-                                <p className="text-xl font-bold text-[#e0e0e0]">{crossModelParity.claudeScore}/100</p>
+                              <div className="bg-[#0a0a0a] border border-[#1a1a1a] p-5 rounded-sm text-center">
+                                <p className="text-[11px] text-[#888] uppercase mb-2 font-bold">Claude Score</p>
+                                <p className="text-2xl font-bold text-[#e0e0e0]">{crossModelParity.claudeScore}/100</p>
                               </div>
-                              <div className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm text-center">
-                                <p className="text-[10px] text-[#666] uppercase mb-1">Gemini Score</p>
-                                <p className="text-xl font-bold text-[#e0e0e0]">{crossModelParity.geminiScore}/100</p>
+                              <div className="bg-[#0a0a0a] border border-[#1a1a1a] p-5 rounded-sm text-center">
+                                <p className="text-[11px] text-[#888] uppercase mb-2 font-bold">Gemini Score</p>
+                                <p className="text-2xl font-bold text-[#e0e0e0]">{crossModelParity.geminiScore}/100</p>
                               </div>
-                              <div className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm text-center">
-                                <p className="text-[10px] text-[#666] uppercase mb-1">GPT Score</p>
-                                <p className="text-xl font-bold text-[#e0e0e0]">{crossModelParity.gptScore}/100</p>
+                              <div className="bg-[#0a0a0a] border border-[#1a1a1a] p-5 rounded-sm text-center">
+                                <p className="text-[11px] text-[#888] uppercase mb-2 font-bold">GPT Score</p>
+                                <p className="text-2xl font-bold text-[#e0e0e0]">{crossModelParity.gptScore}/100</p>
                               </div>
-                              <div className="bg-[#0a0a0a] border border-[#0088ff] p-4 rounded-sm text-center">
-                                <p className="text-[10px] text-[#0088ff] uppercase mb-1">Consistency</p>
-                                <p className="text-xl font-bold text-[#0088ff]">{crossModelParity.consistency}/100</p>
+                              <div className="bg-[#0a0a0a] border border-[#0088ff]/30 p-5 rounded-sm text-center">
+                                <p className="text-[11px] text-[#0088ff] uppercase mb-2 font-bold">Consistency</p>
+                                <p className="text-2xl font-bold text-[#0088ff]">{crossModelParity.consistency}/100</p>
                               </div>
                             </div>
                             <div>
-                              <p className="text-[10px] text-[#666] uppercase mb-2">Identified Issues & Biases</p>
-                              <ul className="list-disc pl-4 space-y-1">
+                              <p className="text-[11px] text-[#888] uppercase mb-3 font-bold">Identified Issues & Biases</p>
+                              <ul className="list-disc pl-5 space-y-2">
                                 {crossModelParity.issues.map((issue, idx) => (
-                                  <li key={idx} className="text-xs text-[#e0e0e0]">{issue}</li>
+                                  <li key={idx} className="text-sm text-[#ccc]">{issue}</li>
                                 ))}
                               </ul>
                             </div>
@@ -1329,23 +1422,23 @@ ${instructionSet.finalPrompt}
                         {constitutionalMapping ? (
                           <div className="space-y-6">
                             <div className="bg-[#050505] border border-[#1a1a1a] p-6 rounded-sm">
-                              <h3 className="text-[10px] font-bold text-[#00ff00] uppercase tracking-wider mb-4 flex items-center gap-2">
-                                <Scale size={14} /> Constitutional Mapping UI
+                              <h3 className="text-xs font-bold text-[#00ff00] uppercase tracking-wider mb-6 flex items-center gap-2">
+                                <Scale size={16} /> Constitutional Mapping UI
                               </h3>
-                              <div className="space-y-4">
+                              <div className="space-y-6">
                                 {constitutionalMapping.standards.map((std, idx) => (
-                                  <div key={idx} className="bg-[#0a0a0a] border border-[#333] p-4 rounded-sm">
-                                    <div className="flex justify-between items-center mb-3">
-                                      <h4 className="text-sm font-bold text-[#e0e0e0]">{std.standard}</h4>
-                                      <span className="text-xs font-bold text-[#00ff00]">{std.coverage}% Coverage</span>
+                                  <div key={idx} className="bg-[#0a0a0a] border border-[#1a1a1a] p-5 rounded-sm">
+                                    <div className="flex justify-between items-center mb-4">
+                                      <h4 className="text-base font-bold text-[#e0e0e0]">{std.standard}</h4>
+                                      <span className="text-sm font-bold text-[#00ff00]">{std.coverage}% Coverage</span>
                                     </div>
-                                    <div className="w-full bg-[#1a1a1a] h-1 mb-4 rounded-full overflow-hidden">
+                                    <div className="w-full bg-[#1a1a1a] h-2 mb-6 rounded-full overflow-hidden">
                                       <div className="bg-[#00ff00] h-full" style={{ width: `${std.coverage}%` }}></div>
                                     </div>
-                                    <p className="text-[10px] text-[#666] uppercase mb-2">Mapped Clauses</p>
-                                    <ul className="list-disc pl-4 space-y-1">
+                                    <p className="text-[11px] text-[#888] uppercase mb-3 font-bold">Mapped Clauses</p>
+                                    <ul className="list-disc pl-5 space-y-2">
                                       {std.mappedClauses.map((clause, cIdx) => (
-                                        <li key={cIdx} className="text-xs text-[#ccc]">{clause}</li>
+                                        <li key={cIdx} className="text-sm text-[#ccc]">{clause}</li>
                                       ))}
                                     </ul>
                                   </div>
@@ -1372,39 +1465,39 @@ ${instructionSet.finalPrompt}
                 className="bg-[#0f0f0f] border border-[#ff0000] p-8 rounded-sm space-y-6"
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 text-[#ff0000]">
-                    <AlertCircle size={24} />
-                    <h2 className="text-lg font-bold uppercase tracking-widest">Retrospective Analysis</h2>
+                  <div className="flex items-center gap-4 text-[#ff0000]">
+                    <AlertCircle size={32} />
+                    <h2 className="text-xl font-bold uppercase tracking-widest">Retrospective Analysis</h2>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => handleBoxCopy(retrospective)} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Copy to clipboard">
-                      <Copy size={12} /> COPY
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => handleBoxCopy(retrospective)} className="text-[11px] text-[#888] hover:text-[#00ff00] flex items-center gap-2 transition-colors font-bold uppercase" title="Copy to clipboard">
+                      <Copy size={14} /> COPY
                     </button>
-                    <button onClick={() => handleBoxExport('Retrospective Analysis', retrospective, 'json')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download JSON">
-                      <FileJson size={12} /> JSON
+                    <button onClick={() => handleBoxExport('Retrospective Analysis', retrospective, 'json')} className="text-[11px] text-[#888] hover:text-[#00ff00] flex items-center gap-2 transition-colors font-bold uppercase" title="Download JSON">
+                      <FileJson size={14} /> JSON
                     </button>
-                    <button onClick={() => handleBoxExport('Retrospective Analysis', retrospective, 'md')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors" title="Download Markdown">
-                      <FileText size={12} /> MD
+                    <button onClick={() => handleBoxExport('Retrospective Analysis', retrospective, 'md')} className="text-[11px] text-[#888] hover:text-[#00ff00] flex items-center gap-2 transition-colors font-bold uppercase" title="Download Markdown">
+                      <FileText size={14} /> MD
                     </button>
                   </div>
                 </div>
-                <div className="space-y-6">
+                <div className="space-y-8">
                   <div>
-                    <span className="text-[10px] text-[#666] uppercase block mb-2">Root Cause of Failure</span>
-                    <p className="text-sm text-[#e0e0e0] leading-relaxed bg-[#1a0000] p-4 border-l-4 border-[#ff0000]">
+                    <span className="text-[11px] text-[#888] uppercase block mb-3 font-bold">Root Cause of Failure</span>
+                    <p className="text-base text-[#e0e0e0] leading-relaxed bg-[#1a0000] p-6 border-l-4 border-[#ff0000]">
                       {retrospective.failureReason}
                     </p>
                   </div>
                   <div>
-                    <span className="text-[10px] text-[#666] uppercase block mb-2">BUILD_CONTRACT.template.md Update</span>
-                    <pre className="bg-[#050505] p-4 text-xs text-[#ffaa00] border border-[#1a1a1a] whitespace-pre-wrap font-mono">
+                    <span className="text-[11px] text-[#888] uppercase block mb-3 font-bold">BUILD_CONTRACT.template.md Update</span>
+                    <pre className="bg-[#050505] p-6 text-sm text-[#ffaa00] border border-[#1a1a1a] whitespace-pre-wrap font-mono custom-scrollbar overflow-auto max-h-[400px]">
                       {retrospective.suggestedUpdate}
                     </pre>
                   </div>
                 </div>
                 <button 
                   onClick={() => setRetrospective(null)}
-                  className="bg-[#ff0000] text-[#000] px-6 py-2 text-xs font-bold uppercase tracking-widest hover:bg-[#cc0000] transition-colors"
+                  className="bg-[#ff0000] text-[#000] px-8 py-3 text-sm font-bold uppercase tracking-widest hover:bg-[#cc0000] transition-colors rounded-sm shadow-lg active:scale-[0.98]"
                 >
                   Clear Analysis
                 </button>
