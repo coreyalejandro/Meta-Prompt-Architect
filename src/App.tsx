@@ -5,7 +5,7 @@ import { UserIntent, AuditResult, StressTestResult, InstructionSet, ModelType, M
 import KnowledgeExpert from './components/KnowledgeExpert';
 import { auditIntent, stressTest, generateInstructionSet, getRetrospective, scanForPII, redTeamAudit, testCrossModelParity, mapConstitutionalStandards } from './services/gemini';
 import { estimateCost } from './services/tokenEstimator';
-import { Terminal, Cpu, ShieldAlert, Zap, Save, RefreshCw, AlertCircle, BookOpen, Layers, CheckCircle2, FileCode, Printer, Eye, HelpCircle, History, Download, Sun, Moon, Monitor, Info, FileText, Sparkles, GitBranch, DollarSign, Copy, FileJson, Search, Scale, Activity } from 'lucide-react';
+import { Terminal, Cpu, ShieldAlert, Zap, Save, RefreshCw, AlertCircle, BookOpen, Layers, CheckCircle2, FileCode, Printer, Eye, HelpCircle, History, Download, Sun, Moon, Monitor, Info, FileText, Sparkles, GitBranch, DollarSign, Copy, FileJson, Search, Scale, Activity, Archive } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { generateCursorRules } from './services/ideHandoff';
 import Manual from './components/Manual';
@@ -332,7 +332,7 @@ ${instructionSet.finalPrompt}
     return 'OPTIMAL: Low cognitive density. Execution precision will be extremely high.';
   };
 
-  const downloadPDF = () => {
+  const downloadPDF = (shouldSave = true) => {
     const doc = new jsPDF();
     let y = 20;
     
@@ -396,7 +396,101 @@ ${instructionSet.finalPrompt}
       y += (splitLine.length * 7) + 2;
     });
     
-    doc.save("Meta-Prompt-Architect-Docs.pdf");
+    if (shouldSave) {
+      doc.save("Meta-Prompt-Architect-Docs.pdf");
+    }
+    return doc;
+  };
+
+  const handleDownloadBundle = async () => {
+    if (!instructionSet || !audit || !stress) return;
+    
+    setLoading(true);
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+      
+      const timestamp = new Date().toISOString();
+      const folderName = `Meta_Prompt_Architect_Full_Export_${Date.now()}`;
+      
+      const fullData = {
+        timestamp,
+        intent,
+        audit,
+        stress,
+        instructionSet,
+        redTeamResults,
+        crossModelParity,
+        constitutionalMapping,
+        roiAnalytics
+      };
+
+      // 1. JSON
+      zip.file("full_cognitive_audit.json", JSON.stringify(fullData, null, 2));
+
+      // 2. Markdown Report
+      const mdContent = `# Meta-Prompt Architect Comprehensive Governance Report
+Generated: ${timestamp}
+
+## 1. Intent Analysis
+${intent.raw}
+
+## 2. Final Instruction Set
+### System Role
+${instructionSet.systemRole}
+
+### Instructions
+${instructionSet.finalPrompt}
+
+## 3. Cognitive Governance Audit
+- Verification Gates: ${instructionSet.verificationGates.join(', ')}
+- Cognitive Stack: ${instructionSet.cognitiveStack.join(', ')}
+
+## 4. Security & Compliance
+- Red-Team Score: ${redTeamResults?.score || 'N/A'}/10
+- Vulnerabilities: ${redTeamResults?.vulnerabilities.join(', ') || 'None detected'}
+`;
+      zip.file("governance_report.md", mdContent);
+
+      // 3. Plain Text Instruction Set
+      zip.file("executable_instruction_set.txt", instructionSet.finalPrompt);
+      
+      // 4. YAML Summary (Basic stringification)
+      const yamlContent = `metadata:
+  version: "2.0"
+  timestamp: "${timestamp}"
+  targetModel: "${intent.targetModel}"
+audit_summary:
+  security_score: ${redTeamResults?.score || 'N/A'}
+  cognitive_density: ${getCognitiveLoad()}%
+  lci_enabled: ${intent.useLCI}
+`;
+      zip.file("summary.yaml", yamlContent);
+
+      // 5. IDE Handoff (.cursorrules)
+      zip.file(".cursorrules", generateCursorRules(instructionSet));
+
+      // 6. PDF Documentation
+      const pdfDoc = downloadPDF(false);
+      const pdfBlob = pdfDoc.output('blob');
+      zip.file("documentation_kit.pdf", pdfBlob);
+
+      // Generate the ZIP
+      const zipContent = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(zipContent);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${folderName}.zip`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+      
+      console.log('Bundle generated successfully.');
+    } catch (err) {
+      console.error('Bundle error:', err);
+      setError('Failed to generate bundled ZIP. Ensure all models have stabilized.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const contextForExpert = {
@@ -461,12 +555,17 @@ ${instructionSet.finalPrompt}
               <button onClick={() => handleExport('json')} className="text-[9px] text-[#666] hover:text-[#00ff00] flex items-center gap-1 transition-colors px-2">
                 <Download size={12} /> EXPORT_JSON
               </button>
-              <button onClick={() => handleExport('cursor')} className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 font-bold">
+              <button onClick={() => handleExport('cursor')} className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 font-bold border-r border-[#1a1a1a] pr-2">
                 <Terminal size={12} /> EXPORT_CURSOR
               </button>
+              <button 
+                onClick={handleDownloadBundle} 
+                disabled={!instructionSet || loading}
+                className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 font-bold animate-pulse disabled:opacity-20 disabled:animate-none"
+              >
+                <Archive size={12} /> DOWNLOAD_BUNDLE
+              </button>
             </div>
-
-            {/* Theme Switcher */}
             <div className="flex items-center gap-2 border-r border-[#1a1a1a] pr-4">
               <button 
                 onClick={() => setIntent(prev => ({ ...prev, theme: ThemeType.DARK }))}
