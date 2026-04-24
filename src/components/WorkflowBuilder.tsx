@@ -1,8 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion } from 'motion/react';
+import {
+  ReactFlow,
+  MiniMap,
+  Controls,
+  Background,
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  Connection,
+  Edge,
+  Node
+} from 'reactflow';
+import 'reactflow/dist/style.css';
 import { WorkflowStep, ModelType, UserIntent, ThemeType } from '../types';
-import { auditIntent, stressTest, generateInstructionSet, generateWorkflow } from '../services/gemini';
-import { Play, Plus, Trash2, GitMerge, CheckCircle2, AlertCircle, RefreshCw, Wand2, LayoutTemplate } from 'lucide-react';
+import { auditIntent, stressTest, generateInstructionSet, generateWorkflow, getModelStrengths } from '../services/gemini';
+import { Play, Plus, Trash2, GitMerge, CheckCircle2, AlertCircle, RefreshCw, Wand2, LayoutTemplate, SplitSquareHorizontal } from 'lucide-react';
 
 const TEMPLATES = [
   {
@@ -41,6 +54,59 @@ export default function WorkflowBuilder() {
   const [autoPrompt, setAutoPrompt] = useState('');
   const [showAutoBuilder, setShowAutoBuilder] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showVisualizer, setShowVisualizer] = useState(true);
+
+  // ReactFlow state
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  // Sync ReactFlow with internal steps state
+  useEffect(() => {
+    const newNodes: Node[] = steps.map((step, index) => {
+      // Calculate a rough grid position based on an assumed layout logic (simple horizontal spread for now)
+      // In a robust implementation, you'd use a layout library like dagre, but simple math works for small trees.
+      const level = step.dependsOn.length;
+      return {
+        id: step.id,
+        position: { x: index * 250, y: level * 150 },
+        data: { 
+          label: (
+             <div className="flex flex-col gap-1 p-2">
+                <div className="font-bold text-xs">{step.name}</div>
+                <div className="text-[9px] text-gray-500">{step.targetModel}</div>
+                <div className="text-[10px] mt-1 capitalize text-blue-500">{step.status}</div>
+             </div>
+          )
+        },
+        type: 'default',
+        style: {
+          background: step.status === 'completed' ? '#0a2a0a' : step.status === 'failed' ? '#2a0a0a' : step.status === 'running' ? '#0a1a2a' : '#111',
+          border: `1px solid ${step.status === 'completed' ? '#00ff00' : step.status === 'failed' ? '#ff0000' : step.status === 'running' ? '#0088ff' : '#333'}`,
+          color: '#eee',
+          borderRadius: '4px',
+          padding: '5px'
+        }
+      };
+    });
+
+    const newEdges: Edge[] = [];
+    steps.forEach(step => {
+      step.dependsOn.forEach(depId => {
+        newEdges.push({
+          id: `e-${depId}-${step.id}`,
+          source: depId,
+          target: step.id,
+          animated: step.status === 'running',
+          style: { stroke: step.status === 'completed' ? '#00ff00' : '#555' }
+        });
+      });
+    });
+
+    setNodes(newNodes);
+    setEdges(newEdges);
+  }, [steps, setNodes, setEdges]);
+
+  const onConnect = useCallback((params: Connection | Edge) => setEdges((eds) => addEdge(params, eds)), [setEdges]);
 
   const handleAutoGenerate = async () => {
     if (!autoPrompt) return;
@@ -136,40 +202,70 @@ export default function WorkflowBuilder() {
 
     let hasPending = true;
     while (hasPending) {
-      const pendingSteps = currentSteps.filter(s => 
+      // Find steps ready to run (idle, and all dependencies are completed)
+      // AND also, ensure none of their dependencies failed. If a dependency failed, this step must also fail.
+      const readySteps = currentSteps.filter(s => 
         s.status === 'idle' && 
-        s.dependsOn.every(dep => completed.has(dep))
+        s.dependsOn.every(dep => completed.has(dep)) &&
+        !s.dependsOn.some(dep => failed.has(dep))
       );
 
-      if (pendingSteps.length === 0) {
+      // Immediately fail steps whose dependencies have failed
+      const cascadedFailures = currentSteps.filter(s => 
+        s.status === 'idle' && 
+        s.dependsOn.some(dep => failed.has(dep))
+      );
+      
+      if (cascadedFailures.length > 0) {
+        currentSteps = currentSteps.map(s => 
+          cascadedFailures.some(cf => cf.id === s.id) ? { ...s, status: 'failed', error: 'Dependency failed' } : s
+        );
+        cascadedFailures.forEach(s => failed.add(s.id));
+        setSteps([...currentSteps]);
+      }
+
+      if (readySteps.length === 0) {
         const stuckSteps = currentSteps.filter(s => s.status === 'idle');
         if (stuckSteps.length > 0) {
-          currentSteps = currentSteps.map(s => s.status === 'idle' ? { ...s, status: 'failed', error: 'Dependency failed or circular dependency' } : s);
-          setSteps(currentSteps);
+          currentSteps = currentSteps.map(s => s.status === 'idle' ? { ...s, status: 'failed', error: 'Dependency unresolved or circular dependency' } : s);
+          setSteps([...currentSteps]);
         }
         break;
       }
 
       // Run pending steps
-      await Promise.all(pendingSteps.map(async (step) => {
-        currentSteps = currentSteps.map(s => s.id === step.id ? { ...s, status: 'running' } : s);
-        setSteps(currentSteps);
+      await Promise.all(readySteps.map(async (step) => {
+        setSteps(prev => prev.map(s => s.id === step.id ? { ...s, status: 'running' } : s));
 
         try {
           let fullIntentRaw = step.intent;
           if (step.dependsOn.length > 0) {
              const depResults = step.dependsOn.map(depId => {
+               // Must find from steps state just before resolving dependencies, but assuming completed they are fixed
                const depStep = currentSteps.find(s => s.id === depId);
                return `\n\n--- Output from ${depStep?.name} ---\n${depStep?.result?.finalPrompt}`;
              }).join('\n');
              fullIntentRaw += `\n\nContext from previous steps:${depResults}`;
           }
 
+          const modelCapabilities = getModelStrengths(step.targetModel);
+          // Dynamically adjust LCI Context Window and Compression based on model target
+          let targetContext = 128000;
+          let targetCompression = 4;
+          
+          if (step.targetModel.includes('3.1-pro') || step.targetModel.includes('behemoth')) {
+            targetContext = 1000000;
+            targetCompression = 16;
+          } else if (step.targetModel.includes('opus') || step.targetModel.includes('pro')) {
+            targetContext = 512000;
+            targetCompression = 8;
+          }
+
           const intentObj: UserIntent = {
-            raw: fullIntentRaw,
+            raw: fullIntentRaw + `\n\n[SYSTEM DIRECTIVE: Optimize purely for ${step.targetModel}. Architecture Strengths: ${modelCapabilities}]`,
             targetModel: step.targetModel,
             useLCI: true,
-            lciConfig: { contextWindow: 128000, compressionRatio: 4 },
+            lciConfig: { contextWindow: targetContext, compressionRatio: targetCompression },
             highRisk: false,
             theme: ThemeType.DARK
           };
@@ -178,12 +274,18 @@ export default function WorkflowBuilder() {
           const stressRes = await stressTest(intentObj, auditRes);
           const instructionRes = await generateInstructionSet(intentObj, stressRes, []);
 
-          currentSteps = currentSteps.map(s => s.id === step.id ? { ...s, status: 'completed', result: instructionRes } : s);
-          setSteps(currentSteps);
+          setSteps(prev => {
+             const updated = prev.map(s => s.id === step.id ? { ...s, status: 'completed' as const, result: instructionRes } : s);
+             currentSteps = updated; // local cache update for next iteration
+             return updated;
+          });
           completed.add(step.id);
         } catch (err) {
-          currentSteps = currentSteps.map(s => s.id === step.id ? { ...s, status: 'failed', error: String(err) } : s);
-          setSteps(currentSteps);
+          setSteps(prev => {
+             const updated = prev.map(s => s.id === step.id ? { ...s, status: 'failed' as const, error: String(err) } : s);
+             currentSteps = updated; // local cache update for next iteration
+             return updated;
+          });
           failed.add(step.id);
         }
       }));
@@ -232,8 +334,42 @@ export default function WorkflowBuilder() {
             {isRunning ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
             {isRunning ? 'Executing...' : 'Run Workflow'}
           </button>
+          <button 
+            onClick={() => setShowVisualizer(!showVisualizer)}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-[#1a1a1a] text-[#e0e0e0] text-xs font-bold uppercase hover:bg-[#222] transition-colors whitespace-nowrap"
+          >
+            <SplitSquareHorizontal size={14} /> Toggle Graph
+          </button>
         </div>
       </div>
+
+      {showVisualizer && steps.length > 0 && (
+         <div className="h-[400px] w-full border border-[#1a1a1a] rounded-sm bg-[#050505]">
+           <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              fitView
+              attributionPosition="bottom-left"
+            >
+              <MiniMap 
+                nodeStrokeColor={(n) => {
+                  if (n.style?.background === '#0a2a0a') return '#00ff00';
+                  if (n.style?.background === '#2a0a0a') return '#ff0000';
+                  return '#333';
+                }}
+                nodeColor={(n) => n.style?.background as string}
+                nodeBorderRadius={2}
+                maskColor="rgba(0,0,0,0.8)"
+                style={{ backgroundColor: '#111' }}
+              />
+              <Controls className="bg-[#111] fill-white border-[#333]" />
+              <Background color="#333" gap={16} />
+            </ReactFlow>
+         </div>
+      )}
 
       {showAutoBuilder && (
         <motion.div 

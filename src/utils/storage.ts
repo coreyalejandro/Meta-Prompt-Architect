@@ -4,9 +4,29 @@ import { encryptData, decryptData } from './crypto';
 
 const HISTORY_KEY = 'architect_history';
 const MEMORY_KEY = 'architect_memory';
+const WORKSPACE_KEY = 'architect_workspace';
 const RETENTION_DAYS = 30; // Auto-purge history older than 30 days
 
 export const storage = {
+  async getWorkspace(): Promise<any | null> {
+    try {
+      const data = await get<any>(WORKSPACE_KEY);
+      if (!data) return null;
+      return data;
+    } catch (e) {
+      console.error('Failed to get workspace from IndexedDB', e);
+      return null;
+    }
+  },
+
+  async saveWorkspace(workspace: any): Promise<void> {
+    try {
+      await set(WORKSPACE_KEY, workspace);
+    } catch (e) {
+      console.error('Failed to save workspace to IndexedDB', e);
+    }
+  },
+
   async getHistory(): Promise<HistoryItem[]> {
     try {
       const data = await get<any>(HISTORY_KEY);

@@ -5,9 +5,10 @@ interface TooltipProps {
   children: React.ReactNode;
   text: string;
   position?: 'top' | 'bottom' | 'left' | 'right';
+  className?: string;
 }
 
-export default function Tooltip({ children, text, position = 'top' }: TooltipProps) {
+export default function Tooltip({ children, text, position = 'top', className = "inline-block" }: TooltipProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   const getPositionClasses = () => {
@@ -39,7 +40,7 @@ export default function Tooltip({ children, text, position = 'top' }: TooltipPro
   };
 
   return (
-    <div className="relative inline-block" onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+    <div className={`relative ${className}`} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
       {children}
       <AnimatePresence>
         {isHovered && (

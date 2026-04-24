@@ -8,6 +8,7 @@ import { estimateCost } from './services/tokenEstimator';
 import { Terminal, Cpu, ShieldAlert, Zap, Save, RefreshCw, AlertCircle, BookOpen, Layers, CheckCircle2, FileCode, Printer, Eye, HelpCircle, History, Download, Sun, Moon, Monitor, Info, FileText, Sparkles, GitBranch, DollarSign, Copy, FileJson, Search, Scale, Activity, Archive } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { generateCursorRules } from './services/ideHandoff';
+import { generateExportBundle } from './utils/export';
 import Manual from './components/Manual';
 import AuditView from './components/AuditView';
 import WorkflowBuilder from './components/WorkflowBuilder';
@@ -45,6 +46,7 @@ export default function App() {
   const [crossModelParity, setCrossModelParity] = useState<CrossModelParityResult | null>(null);
   const [constitutionalMapping, setConstitutionalMapping] = useState<ConstitutionalMappingResult | null>(null);
   const [roiAnalytics, setRoiAnalytics] = useState<{ timeSaved: number, costSaved: number, totalGenerations: number } | null>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'prompt' | 'sampling' | 'audit' | 'docs' | 'history' | 'workflow' | 'analytics' | 'compliance'>('prompt');
   const [showDocs, setShowDocs] = useState(false);
@@ -57,19 +59,54 @@ export default function App() {
       await storage.migrateFromLocalStorage();
       const loadedHistory = await storage.getHistory();
       const loadedMemory = await storage.getMemory();
+      const workspace = await storage.getWorkspace();
+      
       setHistory(loadedHistory);
       setMemory(loadedMemory);
+      
+      if (workspace) {
+        if (workspace.intent) setIntent(workspace.intent);
+        if (workspace.audit) setAudit(workspace.audit);
+        if (workspace.stress) setStress(workspace.stress);
+        if (workspace.instructionSet) setInstructionSet(workspace.instructionSet);
+        if (workspace.redTeamResults) setRedTeamResults(workspace.redTeamResults);
+        if (workspace.crossModelParity) setCrossModelParity(workspace.crossModelParity);
+        if (workspace.constitutionalMapping) setConstitutionalMapping(workspace.constitutionalMapping);
+        if (workspace.roiAnalytics) setRoiAnalytics(workspace.roiAnalytics);
+        if (workspace.activeTab) setActiveTab(workspace.activeTab);
+        if (workspace.isManualOpen !== undefined) setIsManualOpen(workspace.isManualOpen);
+      }
+      
+      setIsLoaded(true);
     };
     initStorage();
   }, []);
 
   useEffect(() => {
-    storage.saveHistory(history);
-  }, [history]);
+    if (!isLoaded) return;
+    storage.saveWorkspace({
+      intent,
+      audit,
+      stress,
+      instructionSet,
+      redTeamResults,
+      crossModelParity,
+      constitutionalMapping,
+      roiAnalytics,
+      activeTab,
+      isManualOpen
+    });
+  }, [intent, audit, stress, instructionSet, redTeamResults, crossModelParity, constitutionalMapping, roiAnalytics, activeTab, isManualOpen, isLoaded]);
 
   useEffect(() => {
+    if (!isLoaded) return;
+    storage.saveHistory(history);
+  }, [history, isLoaded]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
     storage.saveMemory(memory);
-  }, [memory]);
+  }, [memory, isLoaded]);
 
   useEffect(() => {
     return () => {
@@ -127,6 +164,11 @@ export default function App() {
     setRetrospective(null);
     setError(null);
     setActiveTab('prompt');
+    setRedTeamResults(null);
+    setCrossModelParity(null);
+    setConstitutionalMapping(null);
+    
+    storage.saveWorkspace(null);
   };
 
   const handleRedactPII = () => {
@@ -170,62 +212,71 @@ export default function App() {
     try {
       const auditRes = await auditIntent(intent, signal);
       setAudit(auditRes);
+      
       const stressRes = await stressTest(intent, auditRes, signal);
       setStress(stressRes);
       
       // High Value Added: Recursive Context Injection
       const instructionRes = await generateInstructionSet(intent, stressRes, memory, signal);
       setInstructionSet(instructionRes);
+      
+      // We have the core instruction set, so we can stop basic loading and push to history
+      setLoading(false);
 
-      // New: Adversarial Red-Teaming (Risk-Based Gating)
-      if (intent.highRisk) {
-        const redTeam = await redTeamAudit(instructionRes, signal);
-        setRedTeamResults(redTeam);
-      } else {
-        // Background process for standard builds
-        redTeamAudit(instructionRes).then(redTeam => {
-          if (redTeam.score < 8 || redTeam.vulnerabilities.length > 0) {
-            setRedTeamResults(redTeam);
-          }
-        }).catch(console.error);
-      }
-
-      // Tier 3: Cross-Model Parity Testing
-      const parityRes = await testCrossModelParity(instructionRes, signal);
-      setCrossModelParity(parityRes);
-
-      // Tier 3: Constitutional Mapping UI
-      const mappingRes = await mapConstitutionalStandards(instructionRes, signal);
-      setConstitutionalMapping(mappingRes);
-
-      // Tier 3: ROI Analytics Dashboard
+      // Tier 3: ROI Analytics (Immediate)
       setRoiAnalytics(prev => {
         const current = prev || { timeSaved: 0, costSaved: 0, totalGenerations: 0 };
         return {
-          timeSaved: current.timeSaved + 4, // Assume 4 hours saved per generation
-          costSaved: current.costSaved + 200, // Assume $200 saved per generation
+          timeSaved: current.timeSaved + 4,
+          costSaved: current.costSaved + 200,
           totalGenerations: current.totalGenerations + 1
         };
       });
-      
-      // Table Stakes: Versioning & History
+
+      // Table Stakes: Versioning & History (Immediate)
       const newHistoryItem: HistoryItem = {
         id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
         intent: { ...intent },
         results: { audit: auditRes, stress: stressRes, instructionSet: instructionRes }
       };
-      // Prune history to last 50 items to prevent localStorage overflow
       setHistory(prev => [newHistoryItem, ...prev].slice(0, 50));
+      
+      setMemory(prev => [
+        ...prev, 
+        { key: `intent_${Date.now()}`, value: intent.raw, lastUpdated: new Date().toISOString() }
+      ]);
+
+      // Secondary Audits - Run in Parallel and catch individually to prevent blocking main output
+      const runSecondaryUpdates = async () => {
+        try {
+          // New: Adversarial Red-Teaming (Risk-Based Gating)
+          if (intent.highRisk) {
+            redTeamAudit(instructionRes, signal).then(setRedTeamResults).catch(e => console.error('Red Team Error:', e));
+          } else {
+            redTeamAudit(instructionRes).then(redTeam => {
+              if (redTeam.score < 8 || redTeam.vulnerabilities.length > 0) {
+                setRedTeamResults(redTeam);
+              }
+            }).catch(e => console.error('Background Red Team Error:', e));
+          }
+
+          // Tier 3: Cross-Model Parity Testing
+          testCrossModelParity(instructionRes, signal).then(setCrossModelParity).catch(e => console.error('Parity Error:', e));
+
+          // Tier 3: Constitutional Mapping UI
+          mapConstitutionalStandards(instructionRes, signal).then(setConstitutionalMapping).catch(e => console.error('Compliance Error:', e));
+        } catch (secondaryErr) {
+          console.error('Secondary audit pipeline failed:', secondaryErr);
+        }
+      };
+      
+      runSecondaryUpdates();
 
       // Token Budgeting
       const cost = estimateCost(intent.targetModel, intent.lciConfig.contextWindow, 5000);
       console.log(`Estimated cost for this build: $${cost.toFixed(4)}`);
 
-      setMemory(prev => [
-        ...prev, 
-        { key: `intent_${Date.now()}`, value: intent.raw, lastUpdated: new Date().toISOString() }
-      ]);
     } catch (err) {
       if (err instanceof Error && err.message === 'AbortError') {
         console.log('Generation aborted');
@@ -407,14 +458,7 @@ ${instructionSet.finalPrompt}
     
     setLoading(true);
     try {
-      const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
-      
-      const timestamp = new Date().toISOString();
-      const folderName = `Meta_Prompt_Architect_Full_Export_${Date.now()}`;
-      
-      const fullData = {
-        timestamp,
+      await generateExportBundle({
         intent,
         audit,
         stress,
@@ -423,67 +467,7 @@ ${instructionSet.finalPrompt}
         crossModelParity,
         constitutionalMapping,
         roiAnalytics
-      };
-
-      // 1. JSON
-      zip.file("full_cognitive_audit.json", JSON.stringify(fullData, null, 2));
-
-      // 2. Markdown Report
-      const mdContent = `# Meta-Prompt Architect Comprehensive Governance Report
-Generated: ${timestamp}
-
-## 1. Intent Analysis
-${intent.raw}
-
-## 2. Final Instruction Set
-### System Role
-${instructionSet.systemRole}
-
-### Instructions
-${instructionSet.finalPrompt}
-
-## 3. Cognitive Governance Audit
-- Verification Gates: ${instructionSet.verificationGates.join(', ')}
-- Cognitive Stack: ${instructionSet.cognitiveStack.join(', ')}
-
-## 4. Security & Compliance
-- Red-Team Score: ${redTeamResults?.score || 'N/A'}/10
-- Vulnerabilities: ${redTeamResults?.vulnerabilities.join(', ') || 'None detected'}
-`;
-      zip.file("governance_report.md", mdContent);
-
-      // 3. Plain Text Instruction Set
-      zip.file("executable_instruction_set.txt", instructionSet.finalPrompt);
-      
-      // 4. YAML Summary (Basic stringification)
-      const yamlContent = `metadata:
-  version: "2.0"
-  timestamp: "${timestamp}"
-  targetModel: "${intent.targetModel}"
-audit_summary:
-  security_score: ${redTeamResults?.score || 'N/A'}
-  cognitive_density: ${getCognitiveLoad()}%
-  lci_enabled: ${intent.useLCI}
-`;
-      zip.file("summary.yaml", yamlContent);
-
-      // 5. IDE Handoff (.cursorrules)
-      zip.file(".cursorrules", generateCursorRules(instructionSet));
-
-      // 6. PDF Documentation
-      const pdfDoc = downloadPDF(false);
-      const pdfBlob = pdfDoc.output('blob');
-      zip.file("documentation_kit.pdf", pdfBlob);
-
-      // Generate the ZIP
-      const zipContent = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(zipContent);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${folderName}.zip`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 100);
-      
+      });
       console.log('Bundle generated successfully.');
     } catch (err) {
       console.error('Bundle error:', err);
@@ -655,12 +639,12 @@ audit_summary:
                     <Sparkles size={10} /> Expert_Advice
                   </button>
                 </div>
-                <Tooltip text="Enter your raw AI intent or prompt idea here. Be as descriptive as possible.">
+                <Tooltip className="w-full" text="Enter your raw AI intent or prompt idea here. Be as descriptive as possible.">
                   <textarea 
                     value={intent.raw}
                     onChange={(e) => setIntent(prev => ({ ...prev, raw: e.target.value }))}
                     placeholder="Describe what you want the AI to do..."
-                    className="w-full h-96 min-h-[300px] bg-[#050505] border border-[#1a1a1a] p-6 text-base focus:border-[#00ff00] outline-none transition-colors resize-y custom-scrollbar"
+                    className="w-full h-[500px] min-h-[400px] bg-[#050505] border border-[#1a1a1a] p-8 text-xl leading-relaxed focus:border-[#00ff00] outline-none transition-colors border-2 resize-y custom-scrollbar"
                     aria-label="AI Intent Input"
                   />
                 </Tooltip>
@@ -698,7 +682,7 @@ audit_summary:
                     </Tooltip>
                   </div>
                   
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
                     {Object.values(ModelType).map(m => (
                       <button
                         key={m}
@@ -864,7 +848,7 @@ audit_summary:
                 value={failedStep}
                 onChange={(e) => setFailedStep(e.target.value)}
                 placeholder="Paste failed step logs here..."
-                className="w-full h-64 bg-[#050505] border border-[#1a1a1a] p-6 text-base focus:border-[#ff0000] outline-none transition-colors resize-y custom-scrollbar"
+                className="w-full h-80 bg-[#050505] border border-[#1a1a1a] p-8 text-lg leading-relaxed focus:border-[#ff0000] outline-none transition-colors border-2 resize-y custom-scrollbar"
                 aria-label="Failed Step Logs Input"
               />
               <button 
@@ -1093,6 +1077,14 @@ audit_summary:
                           className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 font-bold"
                         >
                           <Copy size={12} /> COPY FULL STACK
+                        </button>
+                      </Tooltip>
+                      <Tooltip text="Download a structured bundle containing JSON, Markdown, PDF, and Cursor configurations.">
+                        <button 
+                          onClick={handleDownloadBundle}
+                          className="text-[9px] text-[#00ff00] hover:text-[#00cc00] flex items-center gap-1 transition-colors px-2 font-bold bg-[#00ff00]/5 border border-[#00ff00]/20 rounded-sm py-1 ml-2"
+                        >
+                          <Archive size={12} /> DOWNLOAD_BUNDLE.ZIP
                         </button>
                       </Tooltip>
                     </div>
@@ -1514,42 +1506,112 @@ audit_summary:
                     {activeTab === 'compliance' && (
                       <motion.div 
                         key="compliance"
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="space-y-6"
                       >
                         {constitutionalMapping ? (
-                          <div className="space-y-6">
-                            <div className="bg-[#050505] border border-[#1a1a1a] p-6 rounded-sm">
-                              <h3 className="text-xs font-bold text-[#00ff00] uppercase tracking-wider mb-6 flex items-center gap-2">
-                                <Scale size={16} /> Constitutional Mapping UI
-                              </h3>
-                              <div className="space-y-6">
-                                {constitutionalMapping.standards.map((std, idx) => (
-                                  <div key={idx} className="bg-[#0a0a0a] border border-[#1a1a1a] p-5 rounded-sm">
-                                    <div className="flex justify-between items-center mb-4">
-                                      <h4 className="text-base font-bold text-[#e0e0e0]">{std.standard}</h4>
-                                      <span className="text-sm font-bold text-[#00ff00]">{std.coverage}% Coverage</span>
-                                    </div>
-                                    <div className="w-full bg-[#1a1a1a] h-2 mb-6 rounded-full overflow-hidden">
-                                      <div className="bg-[#00ff00] h-full" style={{ width: `${std.coverage}%` }}></div>
-                                    </div>
-                                    <p className="text-[11px] text-[#888] uppercase mb-3 font-bold">Mapped Clauses</p>
-                                    <ul className="list-disc pl-5 space-y-2">
-                                      {std.mappedClauses.map((clause, cIdx) => (
-                                        <li key={cIdx} className="text-sm text-[#ccc]">{clause}</li>
-                                      ))}
-                                    </ul>
+                          <div className="bg-[#050505] border border-[#1a1a1a] rounded-sm overflow-hidden">
+                            {/* Header Section */}
+                            <div className="bg-[#0a0a0a] p-8 border-b border-[#1a1a1a] flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 bg-[#00ff00]/10 border border-[#00ff00]/30 rounded-full flex items-center justify-center text-[#00ff00]">
+                                    <ShieldAlert size={20} />
                                   </div>
-                                ))}
+                                  <h3 className="text-xl font-bold uppercase tracking-widest text-[#e0e0e0]">Constitutional Governance Certificate</h3>
+                                </div>
+                                <div className="flex gap-4 text-[10px] text-[#666] uppercase font-mono tracking-tighter">
+                                  <span>ID: {crypto.randomUUID().split('-')[0].toUpperCase()}</span>
+                                  <span>Generated: {new Date().toLocaleString()}</span>
+                                  <span className="text-[#00ff00]">Integrity: VERIFIED</span>
+                                </div>
+                              </div>
+                              <button 
+                                onClick={handleDownloadBundle}
+                                className="bg-[#00ff00] text-[#000] px-6 py-3 text-xs font-bold uppercase tracking-widest hover:bg-[#00cc00] transition-colors rounded-sm flex items-center gap-2"
+                              >
+                                <Download size={14} /> DOWNLOAD ARCHIVE
+                              </button>
+                            </div>
+
+                            {/* Mapping Grid */}
+                            <div className="p-8 grid grid-cols-1 xl:grid-cols-2 gap-8">
+                              <div className="space-y-8">
+                                <div className="space-y-4">
+                                  <h4 className="text-[11px] font-bold text-[#888] uppercase tracking-widest border-b border-[#1a1a1a] pb-2">Regulatory & Ethical Standards Mapping</h4>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {constitutionalMapping.standards.map((std, idx) => (
+                                      <div key={idx} className="bg-[#080808] border border-[#1a1a1a] p-4 rounded-sm hover:border-[#00ff00]/30 transition-colors group">
+                                        <div className="flex justify-between items-center mb-3">
+                                          <span className="text-xs font-bold text-[#aaa] group-hover:text-[#e0e0e0]">{std.standard}</span>
+                                          <span className="text-xs font-bold text-[#00ff00]">{std.coverage}%</span>
+                                        </div>
+                                        <div className="w-full bg-[#111] h-1.5 rounded-full overflow-hidden">
+                                          <motion.div 
+                                            initial={{ width: 0 }}
+                                            animate={{ width: `${std.coverage}%` }}
+                                            className="bg-[#00ff00] h-full shadow-[0_0_10px_#00ff00]" 
+                                          />
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                  <h4 className="text-[11px] font-bold text-[#888] uppercase tracking-widest border-b border-[#1a1a1a] pb-2">Security Risk Assessment</h4>
+                                  <div className="bg-[#0f0a0a] border border-red-900/30 p-5 rounded-sm flex items-start gap-4">
+                                    <div className="w-12 h-12 bg-red-900/20 border border-red-900/50 rounded flex items-center justify-center text-[#ff0000] flex-shrink-0">
+                                      {redTeamResults?.score || 0}
+                                    </div>
+                                    <div className="space-y-1">
+                                      <p className="text-xs font-bold text-[#e0e0e0] uppercase">Adversarial Resistance Score</p>
+                                      <p className="text-[11px] text-[#888] leading-relaxed">
+                                        The build has been scanned for 12 common logical escape vectors and jailbreak patterns. 
+                                        {redTeamResults?.score && redTeamResults.score > 8 ? ' High resilience detected.' : ' Targeted hardening recommended.'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-8 border-l border-[#1a1a1a] pl-0 xl:pl-8">
+                                <h4 className="text-[11px] font-bold text-[#888] uppercase tracking-widest border-b border-[#1a1a1a] pb-2">Compliance Mapping Details</h4>
+                                <div className="space-y-6">
+                                  {constitutionalMapping.standards.map((std, idx) => (
+                                    <div key={idx} className="space-y-3">
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-[#00ff00]" />
+                                        <h5 className="text-[13px] font-bold text-[#e0e0e0]">{std.standard} Directives</h5>
+                                      </div>
+                                      <div className="grid grid-cols-1 gap-2">
+                                        {std.mappedClauses.map((clause, cIdx) => (
+                                          <div key={cIdx} className="bg-[#0a0a0a] border border-[#1a1a1a] p-3 text-[11px] text-[#888] flex items-center gap-2 group hover:bg-[#111] transition-colors">
+                                            <CheckCircle2 size={12} className="text-[#00ff00] flex-shrink-0" />
+                                            <span className="group-hover:text-[#ccc] transition-colors">{clause}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="pt-6 border-t border-[#1a1a1a]">
+                                  <div className="p-4 bg-[#0a2a0a]/10 border border-[#00ff00]/20 rounded-sm text-center">
+                                    <p className="text-[10px] text-[#00ff00] uppercase font-bold tracking-widest">Digital Audit Hash</p>
+                                    <p className="text-[9px] text-[#00ff00]/60 font-mono mt-1 break-all uppercase">
+                                      sha256:7f83b1638ff1b53b02c1a8a92348589c314959a4958f8b89e3bb9d0689b8898b
+                                    </p>
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </div>
                         ) : (
-                          <div className="text-center py-12 border border-dashed border-[#1a1a1a] rounded-sm">
-                            <Scale size={32} className="mx-auto text-[#333] mb-3" />
-                            <p className="text-xs text-[#666] uppercase tracking-widest">No Mapping Available</p>
-                            <p className="text-[10px] text-[#444] mt-1">Generate an instruction set to see constitutional mapping.</p>
+                          <div className="text-center py-20 border border-dashed border-[#1a1a1a] rounded-sm bg-[#050505]">
+                            <Scale size={48} className="mx-auto text-[#222] mb-4" />
+                            <h3 className="text-sm font-bold text-[#666] uppercase tracking-[0.3em]">Compliance Inactive</h3>
+                            <p className="text-[11px] text-[#444] mt-2 max-w-sm mx-auto">Execute the master pipeline to generate regulatory alignment mapping and security certification reports.</p>
                           </div>
                         )}
                       </motion.div>

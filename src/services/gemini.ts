@@ -23,7 +23,7 @@ export function scanForPII(text: string): PIIFinding[] {
 }
 
 // Essential: Model-Specific Reasoning Adapters
-const getModelStrengths = (model: ModelType) => {
+export const getModelStrengths = (model: ModelType) => {
   switch (model) {
     case ModelType.GPT_5_PRO: return "Industry-leading complex reasoning and ecosystem integration.";
     case ModelType.GPT_5_THINKING: return "Advanced chain-of-thought reasoning.";
@@ -48,49 +48,67 @@ const getModelStrengths = (model: ModelType) => {
 };
 
 export async function auditIntent(intent: UserIntent, signal?: AbortSignal): Promise<AuditResult> {
-  const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: `Analyze this user intent for a prompt: "${intent.raw}". 
-    Identify implicit assumptions, 3 critical edge cases, and the "Truth Surface" (required external data).`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          assumptions: { type: Type.ARRAY, items: { type: Type.STRING } },
-          edgeCases: { type: Type.ARRAY, items: { type: Type.STRING } },
-          truthSurface: { type: Type.ARRAY, items: { type: Type.STRING } },
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: `Analyze this user intent for a prompt: "${intent.raw}". 
+      Identify implicit assumptions, 3 critical edge cases, and the "Truth Surface" (required external data).`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            assumptions: { type: Type.ARRAY, items: { type: Type.STRING } },
+            edgeCases: { type: Type.ARRAY, items: { type: Type.STRING } },
+            truthSurface: { type: Type.ARRAY, items: { type: Type.STRING } },
+          },
+          required: ["assumptions", "edgeCases", "truthSurface"],
         },
-        required: ["assumptions", "edgeCases", "truthSurface"],
       },
-    },
-  });
+    });
 
-  if (signal?.aborted) throw new Error('AbortError');
-  return AuditResultSchema.parse(JSON.parse(response.text));
+    if (signal?.aborted) throw new Error('AbortError');
+    const text = response.text;
+    if (!text) throw new Error('Empty response from audit engine');
+    
+    return AuditResultSchema.parse(JSON.parse(text));
+  } catch (err: any) {
+    console.error('Audit error:', err);
+    if (err.message?.includes('429')) throw new Error('Capacity reached (Rate Limit). Please wait a moment.');
+    throw new Error('Environmental scan failed. The intent might be too complex for initial analysis.');
+  }
 }
 
 export async function stressTest(intent: UserIntent, audit: AuditResult, signal?: AbortSignal): Promise<StressTestResult> {
-  const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: `Stress-test this intent: "${intent.raw}" based on these audit findings: ${JSON.stringify(audit)}.
-    Provide a Critic's argument, Logic optimization, and a Resolution into a "Steel-man" instruction set.`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          criticArgument: { type: Type.STRING },
-          logicOptimization: { type: Type.STRING },
-          resolution: { type: Type.STRING },
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: `Stress-test this intent: "${intent.raw}" based on these audit findings: ${JSON.stringify(audit)}.
+      Provide a Critic's argument, Logic optimization, and a Resolution into a "Steel-man" instruction set.`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            criticArgument: { type: Type.STRING },
+            logicOptimization: { type: Type.STRING },
+            resolution: { type: Type.STRING },
+          },
+          required: ["criticArgument", "logicOptimization", "resolution"],
         },
-        required: ["criticArgument", "logicOptimization", "resolution"],
       },
-    },
-  });
+    });
 
-  if (signal?.aborted) throw new Error('AbortError');
-  return StressTestResultSchema.parse(JSON.parse(response.text));
+    if (signal?.aborted) throw new Error('AbortError');
+    const text = response.text;
+    if (!text) throw new Error('Empty response from stress engine');
+
+    return StressTestResultSchema.parse(JSON.parse(text));
+  } catch (err: any) {
+    console.error('Stress test error:', err);
+    if (err.message?.includes('429')) throw new Error('Capacity reached (Rate Limit). Please wait a moment.');
+    throw new Error('Stress test failed. Try simplifying the intent and re-running the scan.');
+  }
 }
 
 export async function generateInstructionSet(
@@ -100,50 +118,74 @@ export async function generateInstructionSet(
   signal?: AbortSignal
 ): Promise<InstructionSet> {
   const modelStrengths = getModelStrengths(intent.targetModel);
-  const memoryContext = memory.length > 0 ? `\nPersistent Memory Context: ${JSON.stringify(memory)}` : "";
+  // Optimization: Limit memory to last 5 items and truncate long values to prevent "Capacity" issues
+  const relevantMemory = memory.slice(-5).map(m => ({
+    key: m.key,
+    value: m.value.length > 500 ? m.value.substring(0, 500) + "..." : m.value
+  }));
+  const memoryContext = relevantMemory.length > 0 ? `\nRecent Context: ${JSON.stringify(relevantMemory)}` : "";
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: `Generate a high-dimensional Instruction Set for intent: "${intent.raw}" using resolution: "${stress.resolution}".
-    Target Model: ${intent.targetModel}. 
-    Model-Specific Optimization: ${modelStrengths}
-    Use LCI: ${intent.useLCI}. 
-    LCI Configuration: Context Window=${intent.lciConfig.contextWindow} tokens, Compression Ratio=${intent.lciConfig.compressionRatio}:1.
-    High Risk: ${intent.highRisk}.
-    Compliance Mode: ${intent.compliance || 'none'}.${memoryContext}
-    
-    CRITICAL: Use "Advanced Verbalized Sampling". Before finalizing the prompt, perform an internal evaluation of 3 different prompt architectures (e.g., Chain-of-Thought, Few-Shot, Role-Based). 
-    Select the most robust one and explain WHY in the 'verbalizedSampling' field.
-    
-    POLICY ALIGNMENT: Ensure the prompt adheres to safety, neutrality, and ethical guidelines. Flag any potential violations in the cognitive stack.
-    If Compliance Mode is not 'none', ensure the prompt explicitly includes instructions to adhere to the specified regulatory framework (${intent.compliance}).
-    
-    COGNITIVE STACK INSTRUCTIONS: Define the specific cognitive modes the AI should use. If the target model or intent implies an agentic IDE like Claude Code, explicitly utilize its known cognitive modes (e.g., "Architect Mode" for planning, "Code Mode" for execution, "Ask Mode" for clarification). Otherwise, use standard modes (e.g., Analytical, Synthetic, Forensic).
-    
-    Include System Role, Cognitive Stack, Verification Gates, Handoff Artifacts, Verbalized Sampling explanation, and the Final Prompt.
-    
-    CRITICAL: Implement "Instruction Anchoring". Safety-critical directives and compliance instructions MUST be excluded from LCI compression and MUST be explicitly "anchored" at the very end of the 'finalPrompt' (the highest attention area for LLMs), regardless of the LCI compression ratio.
-    
-    CRITICAL: The 'finalPrompt' MUST NOT use terms like 'BOOTSTRAP_COMMAND' or 'USAGE_INSTRUCTIONS' or ask the AI to relay instructions to another session, as these trigger prompt injection filters in modern LLMs. Instead, provide a clear, natural-language 'Context & Goal' section and standard 'Instructions' formatted safely for direct execution.`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          systemRole: { type: Type.STRING },
-          cognitiveStack: { type: Type.ARRAY, items: { type: Type.STRING } },
-          verificationGates: { type: Type.ARRAY, items: { type: Type.STRING } },
-          handoffArtifacts: { type: Type.ARRAY, items: { type: Type.STRING } },
-          verbalizedSampling: { type: Type.STRING },
-          finalPrompt: { type: Type.STRING },
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: `Generate a high-dimensional Instruction Set for intent: "${intent.raw}" using resolution: "${stress.resolution}".
+      Target Model: ${intent.targetModel}. 
+      Model-Specific Optimization: ${modelStrengths}
+      Use LCI: ${intent.useLCI}. 
+      LCI Configuration: Context Window=${intent.lciConfig.contextWindow} tokens, Compression Ratio=${intent.lciConfig.compressionRatio}:1.
+      High Risk: ${intent.highRisk}.
+      Compliance Mode: ${intent.compliance || 'none'}.${memoryContext}
+      
+      CRITICAL: Use "Advanced Verbalized Sampling". Before finalizing the prompt, perform an internal evaluation of 3 different prompt architectures (e.g., Chain-of-Thought, Few-Shot, Role-Based). 
+      Select the most robust one and explain WHY in the 'verbalizedSampling' field.
+      
+      POLICY ALIGNMENT: Ensure the prompt adheres to safety, neutrality, and ethical guidelines. Flag any potential violations in the cognitive stack.
+      If Compliance Mode is not 'none', ensure the prompt explicitly includes instructions to adhere to the specified regulatory framework (${intent.compliance}).
+      
+      DYNAMIC CONTEXTUALIZATION (CRITICAL): The 'systemRole', 'cognitiveStack', 'verificationGates', and 'handoffArtifacts' MUST NOT be generic. They MUST be highly customized and directly derived from the unique nuances of the intent ("${intent.raw}"). Do NOT spit out the same generic instruction set scaffolding for every request.
+      
+      COGNITIVE STACK INSTRUCTIONS: Define the specific, custom cognitive modes the AI should use tailored strictly to this intent. If the target model or intent implies an agentic IDE like Claude Code, explicitly utilize its known cognitive modes (e.g., "Architect Mode" for planning, "Code Mode" for execution, "Ask Mode" for clarification). Otherwise, invent highly specific, intent-driven analysis modes.
+      
+      Include System Role, Cognitive Stack, Verification Gates, Handoff Artifacts, Verbalized Sampling explanation, and the Final Prompt.
+      
+      CRITICAL: Implement "Instruction Anchoring". Safety-critical directives and compliance instructions MUST be excluded from LCI compression and MUST be explicitly "anchored" at the very end of the 'finalPrompt' (the highest attention area for LLMs), regardless of the LCI compression ratio.
+      
+      CRITICAL: The 'finalPrompt' MUST NOT use terms like 'BOOTSTRAP_COMMAND' or 'USAGE_INSTRUCTIONS' or ask the AI to relay instructions to another session, as these trigger prompt injection filters in modern LLMs. Instead, provide a clear, natural-language 'Context & Goal' section and standard 'Instructions' formatted safely for direct execution.`,
+      config: {
+        temperature: 0.7,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            systemRole: { type: Type.STRING },
+            cognitiveStack: { type: Type.ARRAY, items: { type: Type.STRING } },
+            verificationGates: { type: Type.ARRAY, items: { type: Type.STRING } },
+            handoffArtifacts: { type: Type.ARRAY, items: { type: Type.STRING } },
+            verbalizedSampling: { type: Type.STRING },
+            finalPrompt: { type: Type.STRING },
+          },
+          required: ["systemRole", "cognitiveStack", "verificationGates", "handoffArtifacts", "verbalizedSampling", "finalPrompt"],
         },
-        required: ["systemRole", "cognitiveStack", "verificationGates", "handoffArtifacts", "verbalizedSampling", "finalPrompt"],
       },
-    },
-  });
+    });
 
-  if (signal?.aborted) throw new Error('AbortError');
-  return InstructionSetSchema.parse(JSON.parse(response.text));
+    if (signal?.aborted) throw new Error('AbortError');
+    
+    const text = response.text;
+    if (!text) throw new Error('Empty response from analysis engine');
+    
+    try {
+      const parsed = JSON.parse(text);
+      return InstructionSetSchema.parse(parsed);
+    } catch (parseErr) {
+      console.error('Failed to parse instruction set JSON:', text);
+      throw new Error('Analysis engine returned malformed data. The instruction set may be too complex.');
+    }
+  } catch (apiErr: any) {
+    if (apiErr.message?.includes('429')) throw new Error('Capacity reached (Rate Limit). Please wait a moment before re-generating.');
+    if (apiErr.message?.includes('content is too long')) throw new Error('Intent complexity exceeds engine capacity. Please simplify your input.');
+    throw apiErr;
+  }
 }
 
 const RetrospectiveSchema = z.object({
